@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro FERCO_FARMA - Sistema de Gestión</title>
+    
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;0,900;1,900&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #7c3aed; border-radius: 10px; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+        window.FB = {
+            initializeApp, getApps, getApp, getAuth, signInAnonymously, onAuthStateChanged,
+            getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc
+        };
+    </script>
+
+    <script type="text/babel" data-presets="react">
+        const { useState, useEffect, useMemo } = React;
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAb9-1VyhRjQgmel-7eOQfHJEzg5Ljy_9k",
+            authDomain: "ffffff-84406.firebaseapp.com",
+            projectId: "ffffff-84406",
+            storageBucket: "ffffff-84406.firebasestorage.app",
+            messagingSenderId: "232467508280",
+            appId: "1:232467508280:web:6dd2cbd647dedffdfa0acd"
+        };
+
+        const PRODUCTOS_DISPONIBLES = ["MP", "BT", "GDT", "MGDT", "BP", "BC", "FN", "FP", "FG", "K", "G30", "G20", "G10", "MD", "MGM"];
+        const METODOS_PAGO = ["Efectivo", "Nequi", "Daviplata", "Transferencia", "Tarjeta", "Crédito", "Cruce"];
+        const OPERADORES = ["Cris_", "Felipe_", "Jhon_"];
+
+        const loadXLSX = () => {
+            return new Promise((resolve) => {
+                if (window.XLSX) { resolve(window.XLSX); return; }
+                const script = document.createElement('script');
+                script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
+                script.onload = () => resolve(window.XLSX);
+                document.head.appendChild(script);
+            });
+        };
+
+        const Icon = ({ name, size = 16, className = "" }) => (
+            <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>
+        );
+
+        const getSafeFirebaseApp = () => {
+            if (!window.FB) return null;
+            return !window.FB.getApps().length ? window.FB.initializeApp(firebaseConfig) : window.FB.getApp();
+        };
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [registros, setRegistros] = useState([]);
+            const [clientesSugeridos, setClientesSugeridos] = useState([]);
+            const [darkMode, setDarkMode] = useState(true);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [notification, setNotification] = useState(null);
+            const [showTemplateArea, setShowTemplateArea] = useState(false);
+            const [rawTemplate, setRawTemplate] = useState('');
+
+            const getTodayFormatted = () => new Date().toISOString().split('T')[0];
+            const [operadorActivo, setOperadorActivo] = useState(() => localStorage.getItem('ferco_operador_activo') || OPERADORES[0]);
+
+            // --- ESTADOS DE PRODUCTO ---
+            const [listaProductos, setListaProductos] = useState([]); // Array de productos seleccionados
+            const [productoActual, setProductoActual] = useState(''); // Producto en el select
+
+            const [formData, setFormData] = useState({ 
+                cliente: '', valorProducto: '', valorDomicilio: '0', ubicacion: '', fecha: getTodayFormatted() 
+            });
+            const [pagosActuales, setPagosActuales] = useState([]);
+            const [nuevoPago, setNuevoPago] = useState({ metodo: 'Efectivo', monto: '' });
+
+            const appId = 'ferco-farma-tracker';
+
+            useEffect(() => {
+                if (!window.FB) return;
+                const { getAuth, signInAnonymously, onAuthStateChanged } = window.FB;
+                const app = getSafeFirebaseApp();
+                if(!app) return;
+                const auth = getAuth(app);
+                signInAnonymously(auth).catch(err => console.error("Auth Error:", err));
+                const unsubscribe = onAuthStateChanged(auth, setUser);
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                if (!user || !window.FB) return;
+                const { getFirestore, collection, onSnapshot } = window.FB;
+                const app = getSafeFirebaseApp();
+                const db = getFirestore(app);
+
+                const unsubRegs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'registros'), (snapshot) => {
+                    const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+                    setRegistros(data.sort((a, b) => b.timestamp - a.timestamp));
+                });
+
+                const unsubClientes = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'clientes'), (snapshot) => {
+                    const lista = snapshot.docs.map(doc => doc.data().nombre);
+                    setClientesSugeridos([...new Set(lista)].sort());
+                });
+
+                return () => { unsubRegs(); unsubClientes(); };
+            }, [user]);
+
+            useEffect(() => { if (window.lucide) window.lucide.createIcons(); });
+
+            useEffect(() => { localStorage.setItem('ferco_operador_activo', operadorActivo); }, [operadorActivo]);
+
+            const showNotification = (msg, type = 'success') => {
+                setNotification({ msg, type });
+                setTimeout(() => setNotification(null), 3000);
+            };
+
+            const totales = useMemo(() => {
+                return registros.reduce((acc, curr) => {
+                    acc.productos += Number(curr.valorProducto) || 0;
+                    acc.domicilios += Number(curr.valorDomicilio) || 0;
+                    acc.total += (Number(curr.valorProducto) || 0) + (Number(curr.valorDomicilio) || 0);
+                    return acc;
+                }, { productos: 0, domicilios: 0, total: 0 });
+            }, [registros]);
+
+            const totalEsperado = (parseFloat(formData.valorProducto) || 0) + (parseFloat(formData.valorDomicilio) || 0);
+            const totalPagado = pagosActuales.reduce((sum, p) => sum + p.monto, 0);
+            const diferencia = totalEsperado - totalPagado;
+
+            // --- LÓGICA DE PRODUCTOS ---
+            const agregarProductoALista = () => {
+                if (!productoActual) return;
+                setListaProductos([...listaProductos, productoActual]);
+                setProductoActual('');
+            };
+
+            const quitarProductoDeLista = (index) => {
+                setListaProductos(listaProductos.filter((_, i) => i !== index));
+            };
+
+            const agregarPagoALista = () => {
+                const monto = parseFloat(nuevoPago.monto);
+                if (!monto || monto <= 0) return;
+                setPagosActuales(prev => [...prev, { id: Date.now().toString(), metodo: nuevoPago.metodo, monto }]);
+                setNuevoPago({ metodo: 'Efectivo', monto: '' });
+            };
+
+            const quitarPagoDeLista = (id) => {
+                setPagosActuales(prev => prev.filter(p => p.id !== id));
+            };
+
+            const procesarPlantilla = () => {
+                if (!rawTemplate.trim()) return;
+                const extract = (regex) => {
+                    const match = rawTemplate.match(regex);
+                    return match ? match[1].trim() : '';
+                };
+                const pedidoExt = extract(/Pedido:\s*(.*)/i);
+                const valorPStr = extract(/Valor Pedido:\s*([\d.]+)/i);
+                const valorDStr = extract(/Valor Domi:\s*([\d.]+)/i);
+                const valorP = parseFloat(valorPStr.replace(/\./g, '')) || 0;
+                const valorD = parseFloat(valorDStr.replace(/\./g, '')) || 0;
+
+                setFormData(prev => ({
+                    ...prev,
+                    cliente: extract(/Cliente:\s*(.*)/i) || prev.cliente,
+                    ubicacion: extract(/Ubicacion:\s*(.*)/i) || prev.ubicacion,
+                    valorProducto: valorP > 0 ? valorP.toString() : prev.valorProducto,
+                    valorDomicilio: valorD > 0 ? valorD.toString() : prev.valorDomicilio,
+                }));
+                
+                if (pedidoExt) setListaProductos(pedidoExt.split(',').map(p => p.trim()));
+                setRawTemplate('');
+                setShowTemplateArea(false);
+                showNotification('Plantilla cargada');
+            };
+
+            const agregarRegistro = async (e) => {
+                e.preventDefault();
+                if (!user || !window.FB || Math.abs(diferencia) > 0.1 || listaProductos.length === 0) return;
+
+                const { getFirestore, doc, setDoc } = window.FB;
+                const db = getFirestore(getSafeFirebaseApp());
+
+                const nuevoId = Date.now().toString();
+                const payload = {
+                    ...formData,
+                    producto: listaProductos.join(', '), // Convertimos lista a texto para Firebase
+                    valorProducto: parseFloat(formData.valorProducto) || 0,
+                    valorDomicilio: parseFloat(formData.valorDomicilio) || 0,
+                    pagos: pagosActuales,
+                    operador: operadorActivo,
+                    hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    timestamp: Date.now(),
+                    creadoPor: user.uid
+                };
+
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registros', nuevoId), payload);
+                    const clientDocId = formData.cliente.toLowerCase().replace(/\s+/g, '_');
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientDocId), { nombre: formData.cliente.trim() });
+                    
+                    setFormData({ cliente: '', valorProducto: '', valorDomicilio: '0', ubicacion: '', fecha: getTodayFormatted() });
+                    setListaProductos([]);
+                    setPagosActuales([]);
+                    showNotification('Registro guardado exitosamente');
+                } catch (err) { showNotification('Error al guardar', 'error'); }
+            };
+
+            const eliminarRegistro = async (id) => {
+                const { getFirestore, doc, deleteDoc } = window.FB;
+                const db = getFirestore(getSafeFirebaseApp());
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registros', id));
+                    showNotification('Registro eliminado');
+                } catch (err) { showNotification('Error al eliminar', 'error'); }
+            };
+
+            const exportarExcel = async () => {
+                try {
+                    const XLSX = await loadXLSX();
+                    const data = registros.map(r => ({
+                        Fecha: r.fecha, Hora: r.hora, Operador: r.operador, Cliente: r.cliente,
+                        Ubicación: r.ubicacion, Productos: r.producto, Total: (Number(r.valorProducto) || 0) + (Number(r.valorDomicilio) || 0)
+                    }));
+                    const ws = XLSX.utils.json_to_sheet(data);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
+                    XLSX.writeFile(wb, `Reporte_Ferco_${new Date().getTime()}.xlsx`);
+                } catch (err) { showNotification('Error al exportar', 'error'); }
+            };
+
+            const theme = {
+                bg: darkMode ? 'bg-[#020617] text-[#e2e8f0]' : 'bg-slate-50 text-slate-900',
+                card: darkMode ? 'bg-[#0f172a] border-[#7c3aed]/20 shadow-xl' : 'bg-white border-slate-200 shadow-sm',
+                input: darkMode ? 'bg-[#1e293b] border-[#7c3aed]/30 text-white focus:border-[#f59e0b]' : 'bg-white border-slate-200 focus:ring-violet-500',
+                accent: darkMode ? 'text-[#f59e0b]' : 'text-amber-600',
+                primary: darkMode ? 'text-[#7c3aed]' : 'text-violet-600',
+                button: darkMode ? 'bg-gradient-to-r from-[#7c3aed] to-[#f59e0b] text-white' : 'bg-slate-900 text-white',
+            };
+
+            return (
+                <div className={`min-h-screen transition-all duration-700 pb-20 ${theme.bg}`}>
+                    {notification && (
+                        <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-8 py-4 rounded-3xl shadow-2xl animate-bounce ${notification.type === 'error' ? 'bg-red-600' : 'bg-gradient-to-r from-[#7c3aed] to-[#f59e0b]'} text-white font-black`}>
+                            <Icon name={notification.type === 'error' ? "alert-circle" : "check-circle-2"} /> {notification.msg}
+                        </div>
+                    )}
+
+                    <div className="max-w-7xl mx-auto px-4 pt-8">
+                        <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-8">
+                            <div className="flex items-center gap-6 group">
+                                <div className={`relative w-24 h-24 rounded-full overflow-hidden border-2 p-1 ${darkMode ? 'bg-black border-[#7c3aed]/50' : 'bg-white border-slate-200'}`}>
+                                    <Icon name="flask-conical" size={40} className="w-full h-full p-6 text-violet-500 opacity-20" />
+                                </div>
+                                <div>
+                                    <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter leading-none">
+                                        <span className={theme.primary}>FERCO</span> <span className={theme.accent}>FARMA</span>
+                                    </h1>
+                                    <p className="text-[10px] uppercase tracking-[0.4em] font-black opacity-40 mt-3">Certified Quality Interface</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setDarkMode(!darkMode)} className={`p-4 rounded-2xl border ${theme.card}`}>
+                                <Icon name={darkMode ? "sun" : "moon"} size={20} className={darkMode ? "text-amber-400" : "text-violet-600"} />
+                            </button>
+                        </header>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            {[
+                                { label: 'Mercancía Total', val: totales.productos, icon: 'shopping-bag', color: 'border-violet-500' },
+                                { label: 'Ingresos Valor Domi', val: totales.domicilios, icon: 'smartphone', color: 'border-amber-500' },
+                                { label: 'Balance de Caja', val: totales.total, icon: 'zap', color: 'border-white' }
+                            ].map((stat, i) => (
+                                <div key={i} className={`p-8 rounded-[2.5rem] border-l-[6px] ${stat.color} ${theme.card}`}>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <p className="text-[10px] font-black uppercase opacity-40 tracking-widest">{stat.label}</p>
+                                        <Icon name={stat.icon} size={16} className={i === 2 ? theme.accent : theme.primary} />
+                                    </div>
+                                    <p className="text-4xl font-black italic tracking-tight font-mono">${stat.val.toLocaleString()}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex justify-center mb-8">
+                            <div className="flex gap-2 p-1.5 rounded-2xl bg-black/40 border border-white/5">
+                                {OPERADORES.map(op => (
+                                    <button key={op} onClick={() => setOperadorActivo(op)} className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all ${operadorActivo === op ? 'bg-violet-600 text-white' : 'opacity-30'}`}>{op}</button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            <section className="lg:col-span-5 xl:col-span-4 space-y-6">
+                                <div className={`p-8 rounded-[3rem] border ${theme.card}`}>
+                                    <h2 className="text-xl font-black mb-6 flex items-center gap-3 italic uppercase tracking-tighter"><Icon name="zap" size={18} className={theme.accent} /> Datos de Pedido</h2>
+                                    <form onSubmit={agregarRegistro} className="space-y-4">
+                                        <input type="date" className={`w-full px-6 py-4 rounded-2xl border font-bold ${theme.input}`} value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
+                                        <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Identidad del Cliente" value={formData.cliente} onChange={e => setFormData({...formData, cliente: e.target.value})} />
+                                        <datalist id="clients">{clientesSugeridos.map(c => <option key={c} value={c} />)}</datalist>
+                                        
+                                        {/* SECCIÓN MULTIPRODUCTO */}
+                                        <div className="space-y-2">
+                                            <div className="flex gap-2">
+                                                <select className={`flex-1 px-4 py-4 rounded-2xl border font-bold ${theme.input}`} value={productoActual} onChange={e => setProductoActual(e.target.value)}>
+                                                    <option value="">Añadir Producto...</option>
+                                                    {PRODUCTOS_DISPONIBLES.map(p => <option key={p} value={p}>{p}</option>)}
+                                                </select>
+                                                <button type="button" onClick={agregarProductoALista} className="px-6 rounded-2xl bg-violet-600 text-white font-black">+</button>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 min-h-[40px] p-2 bg-black/20 rounded-xl border border-white/5">
+                                                {listaProductos.length === 0 && <span className="text-[10px] opacity-30 italic p-1">No hay productos añadidos...</span>}
+                                                {listaProductos.map((p, idx) => (
+                                                    <span key={idx} className="flex items-center gap-2 bg-violet-600/20 text-violet-400 px-3 py-1 rounded-lg text-[10px] font-black border border-violet-500/30">
+                                                        {p} <button type="button" onClick={() => quitarProductoDeLista(idx)} className="text-red-500 hover:text-red-400">×</button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <input className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Ubicación / Sector" value={formData.ubicacion} onChange={e => setFormData({...formData, ubicacion: e.target.value})} />
+                                        
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold uppercase ml-2 opacity-50 italic">Valor Producto $</label>
+                                                <input required type="number" className={`w-full px-6 py-4 rounded-2xl border font-black ${theme.input}`} value={formData.valorProducto} onChange={e => setFormData({...formData, valorProducto: e.target.value})} />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold uppercase ml-2 opacity-50 italic">Valor Domi $</label>
+                                                <input type="number" className={`w-full px-6 py-4 rounded-2xl border font-black ${theme.input}`} value={formData.valorDomicilio} onChange={e => setFormData({...formData, valorDomicilio: e.target.value})} />
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-4">
+                                            <div className="flex justify-between items-center mb-4 text-[10px] font-black uppercase opacity-50">
+                                                <span>Paga con</span> <span className={diferencia === 0 ? 'text-[#39ff14]' : 'text-amber-500'}>Falta: ${diferencia.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex gap-2 mb-4">
+                                                <select className={`flex-1 px-3 py-3 rounded-xl border text-xs font-bold ${theme.input}`} value={nuevoPago.metodo} onChange={e => setNuevoPago({...nuevoPago, metodo: e.target.value})}>
+                                                    {METODOS_PAGO.map(m => <option key={m} value={m}>{m}</option>)}
+                                                </select>
+                                                <input type="number" placeholder="$" className={`w-24 px-3 py-3 rounded-xl border font-black text-xs ${theme.input}`} value={nuevoPago.monto} onChange={e => setNuevoPago({...nuevoPago, monto: e.target.value})} />
+                                                <button type="button" onClick={agregarPagoALista} className="p-3 rounded-xl bg-violet-600 text-white"><Icon name="plus" size={18} /></button>
+                                            </div>
+                                            <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
+                                                {pagosActuales.map(p => (
+                                                    <div key={p.id} className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/5">
+                                                        <span className="text-[9px] font-black uppercase opacity-50">{p.metodo}</span>
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="text-xs font-bold italic">${p.monto.toLocaleString()}</span>
+                                                            <button type="button" onClick={() => quitarPagoDeLista(p.id)} className="text-red-500">×</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        
+                                        <button type="submit" disabled={diferencia !== 0 || listaProductos.length === 0} className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest disabled:opacity-20 ${theme.button}`}>Guardar Registro</button>
+                                    </form>
+                                </div>
+                            </section>
+
+                            <section className="lg:col-span-7 xl:col-span-8 space-y-6">
+                                <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                                    <div className="relative w-full md:w-96 group">
+                                        <Icon name="search" size={18} className="absolute left-5 top-4 text-slate-500" />
+                                        <input className={`w-full pl-12 pr-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Filtrar por cliente o producto..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                    </div>
+                                    <button onClick={exportarExcel} className={`flex items-center gap-2 px-8 py-4 rounded-2xl text-[11px] font-black uppercase ${darkMode ? 'bg-white text-black' : 'bg-slate-900 text-white'}`}><Icon name="download" size={16} /> Excel</button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {registros.filter(r => r.cliente.toLowerCase().includes(searchTerm.toLowerCase()) || r.producto.toLowerCase().includes(searchTerm.toLowerCase())).map(reg => (
+                                        <div key={reg.id} className={`p-6 rounded-[2.5rem] border ${theme.card}`}>
+                                            <div className="flex flex-col md:flex-row justify-between gap-6">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-3">
+                                                        <span className="text-[9px] font-black px-2 py-1 rounded bg-violet-600/10 text-violet-400 border border-violet-500/20">{reg.fecha}</span>
+                                                        <span className="text-[9px] font-black px-2 py-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 uppercase italic">{reg.operador}</span>
+                                                        <h3 className="text-xl font-black italic uppercase">{reg.cliente}</h3>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-4 opacity-50 text-xs font-bold italic">
+                                                        <span className="flex items-center gap-1.5"><Icon name="zap" size={14} className="text-amber-500" /> {reg.producto}</span>
+                                                        {reg.ubicacion && <span className="flex items-center gap-1.5"><Icon name="map-pin" size={14} /> {reg.ubicacion}</span>}
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col md:items-end justify-center min-w-[140px]">
+                                                    <p className="text-3xl font-black italic">${((Number(reg.valorProducto) || 0) + (Number(reg.valorDomicilio) || 0)).toLocaleString()}</p>
+                                                    <div className="flex flex-wrap md:justify-end gap-1 mt-2">
+                                                        {(reg.pagos || []).map((p, idx) => (
+                                                            <span key={idx} className="text-[8px] font-black uppercase px-2 py-0.5 rounded border border-white/10 opacity-40">{p.metodo}</span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center justify-end border-l border-white/5 pl-4">
+                                                    <button onClick={() => eliminarRegistro(reg.id)} className="text-slate-500 hover:text-red-500 transition-all"><Icon name="trash-2" size={20} /></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
