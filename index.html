@@ -5,15 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Registro FERCO_FARMA - Sistema de Gestión</title>
     
-    <!-- Scripts de React y Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
@@ -25,52 +22,49 @@
             overflow-x: hidden;
         }
 
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #7c3aed;
-            border-radius: 10px;
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #7c3aed; border-radius: 10px; }
 
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-out forwards;
-        }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
-    <!-- Script 1: Carga de Firebase (Módulos nativos) -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+        import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-        // Exponer a global para que el script de Babel pueda acceder
+        // Exponemos las funciones para React
         window.FB = {
-            initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged,
+            initializeApp, getApps, getApp, getAuth, signInAnonymously, onAuthStateChanged,
             getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc
         };
     </script>
 
-    <!-- Script 2: Aplicación React (Babel/JSX) -->
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useMemo } = React;
 
-        // --- CONSTANTES ---
+        // TUS CREDENCIALES REALES DE FIREBASE
+        const firebaseConfig = {
+            apiKey: "AIzaSyAb9-1VyhRjQgmel-7eOQfHJEzg5Ljy_9k",
+            authDomain: "ffffff-84406.firebaseapp.com",
+            projectId: "ffffff-84406",
+            storageBucket: "ffffff-84406.firebasestorage.app",
+            messagingSenderId: "232467508280",
+            appId: "1:232467508280:web:6dd2cbd647dedffdfa0acd"
+        };
+
         const PRODUCTOS_DISPONIBLES = ["MP", "BT", "GDT", "MGDT", "BP", "BC", "FN", "FP", "FG", "K", "G30", "G20", "G10", "MD", "MGM"];
         const METODOS_PAGO = ["Efectivo", "Nequi", "Daviplata", "Transferencia", "Tarjeta", "Crédito", "Cruce"];
         const OPERADORES = ["Cris_", "Felipe_", "Jhon_"];
 
-        // --- UTILIDADES ---
         const loadXLSX = () => {
             return new Promise((resolve) => {
                 if (window.XLSX) { resolve(window.XLSX); return; }
@@ -81,8 +75,14 @@
             });
         };
 
-        const Icon = ({ name, size = 16, className = "" }) => {
-            return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
+        const Icon = ({ name, size = 16, className = "" }) => (
+            <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>
+        );
+
+        // --- FUNCIÓN SEGURA PARA INICIALIZAR FIREBASE SOLO UNA VEZ ---
+        const getSafeFirebaseApp = () => {
+            if (!window.FB) return null;
+            return !window.FB.getApps().length ? window.FB.initializeApp(firebaseConfig) : window.FB.getApp();
         };
 
         const App = () => {
@@ -104,67 +104,52 @@
             const [pagosActuales, setPagosActuales] = useState([]);
             const [nuevoPago, setNuevoPago] = useState({ metodo: 'Efectivo', monto: '' });
 
-            // Inicialización de servicios (Singleton-like)
-            const firebaseConfig = useMemo(() => JSON.parse(window.__firebase_config || '{}'), []);
-            const appId = useMemo(() => window.__app_id || 'ferco-farma-tracker', []);
+            const appId = 'ferco-farma-tracker';
 
-            // --- PASO 1: AUTENTICACIÓN (REGLA 3) ---
+            // --- AUTENTICACIÓN ---
             useEffect(() => {
                 if (!window.FB) return;
-                const { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = window.FB;
+                const { getAuth, signInAnonymously, onAuthStateChanged } = window.FB;
                 
-                const app = initializeApp(firebaseConfig);
+                const app = getSafeFirebaseApp();
+                if(!app) return;
+
                 const auth = getAuth(app);
+                
+                signInAnonymously(auth).catch(err => {
+                    console.error("Auth Error:", err);
+                    showNotification("Asegúrate de haber activado Auth Anónima", "error");
+                });
 
-                const initAuth = async () => {
-                    try {
-                        if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
-                            await signInWithCustomToken(auth, window.__initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    } catch (error) {
-                        console.error("Auth Error:", error);
-                        showNotification("Error de acceso orbital", "error");
-                    }
-                };
-
-                initAuth();
                 const unsubscribe = onAuthStateChanged(auth, setUser);
                 return () => unsubscribe();
             }, []);
 
-            // --- PASO 2: FIRESTORE (REGLA 1 y 2) ---
+            // --- FIRESTORE DATOS ---
             useEffect(() => {
                 if (!user || !window.FB) return;
-                const { getFirestore, collection, onSnapshot, initializeApp } = window.FB;
+                const { getFirestore, collection, onSnapshot } = window.FB;
                 
-                const app = initializeApp(firebaseConfig);
+                const app = getSafeFirebaseApp();
                 const db = getFirestore(app);
 
-                // Escucha de Registros
                 const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registros');
                 const unsubRegs = onSnapshot(regsRef, 
                     (snapshot) => {
                         const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-                        // Ordenar en memoria (Regla 2)
                         setRegistros(data.sort((a, b) => b.timestamp - a.timestamp));
                     },
                     (error) => {
-                        console.error("Firestore Registros Error:", error);
-                        showNotification("Permiso denegado en registros", "error");
+                        console.error("Firestore Error:", error);
+                        showNotification("Error conectando a base de datos. Revisa las Reglas.", "error");
                     }
                 );
 
-                // Escucha de Clientes
                 const clientesRef = collection(db, 'artifacts', appId, 'public', 'data', 'clientes');
                 const unsubClientes = onSnapshot(clientesRef, 
                     (snapshot) => {
                         const lista = snapshot.docs.map(doc => doc.data().nombre);
                         setClientesSugeridos([...new Set(lista)].sort());
-                    },
-                    (error) => {
-                        console.error("Firestore Clientes Error:", error);
                     }
                 );
 
@@ -247,8 +232,8 @@
                 e.preventDefault();
                 if (!user || !window.FB || Math.abs(diferencia) > 0.1 || !formData.producto) return;
 
-                const { getFirestore, collection, doc, setDoc, initializeApp } = window.FB;
-                const db = getFirestore(initializeApp(firebaseConfig));
+                const { getFirestore, doc, setDoc } = window.FB;
+                const db = getFirestore(getSafeFirebaseApp());
 
                 const nuevoId = Date.now().toString();
                 const payload = {
@@ -269,14 +254,17 @@
                     
                     setFormData({ cliente: '', producto: '', valorProducto: '', valorDomicilio: '0', ubicacion: '', fecha: getTodayFormatted() });
                     setPagosActuales([]);
-                    showNotification('Registro guardado');
-                } catch (err) { showNotification('Error al guardar', 'error'); }
+                    showNotification('Registro guardado exitosamente');
+                } catch (err) { 
+                    console.error("Guardar Error:", err);
+                    showNotification('Error al guardar en base de datos', 'error'); 
+                }
             };
 
             const eliminarRegistro = async (id) => {
                 if (!user || !window.FB) return;
-                const { getFirestore, doc, deleteDoc, initializeApp } = window.FB;
-                const db = getFirestore(initializeApp(firebaseConfig));
+                const { getFirestore, doc, deleteDoc } = window.FB;
+                const db = getFirestore(getSafeFirebaseApp());
 
                 try {
                     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registros', id));
