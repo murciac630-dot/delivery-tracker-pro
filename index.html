@@ -41,7 +41,6 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-        // Exponemos las funciones para React
         window.FB = {
             initializeApp, getApps, getApp, getAuth, signInAnonymously, onAuthStateChanged,
             getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc
@@ -51,7 +50,6 @@
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useMemo } = React;
 
-        // TUS CREDENCIALES REALES DE FIREBASE
         const firebaseConfig = {
             apiKey: "AIzaSyAb9-1VyhRjQgmel-7eOQfHJEzg5Ljy_9k",
             authDomain: "ffffff-84406.firebaseapp.com",
@@ -79,7 +77,6 @@
             <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>
         );
 
-        // --- FUNCIÓN SEGURA PARA INICIALIZAR FIREBASE SOLO UNA VEZ ---
         const getSafeFirebaseApp = () => {
             if (!window.FB) return null;
             return !window.FB.getApps().length ? window.FB.initializeApp(firebaseConfig) : window.FB.getApp();
@@ -98,71 +95,51 @@
             const getTodayFormatted = () => new Date().toISOString().split('T')[0];
             const [operadorActivo, setOperadorActivo] = useState(() => localStorage.getItem('ferco_operador_activo') || OPERADORES[0]);
 
+            // --- ESTADOS DE PRODUCTO ---
+            const [listaProductos, setListaProductos] = useState([]); // Array de productos seleccionados
+            const [productoActual, setProductoActual] = useState(''); // Producto en el select
+
             const [formData, setFormData] = useState({ 
-                cliente: '', producto: '', valorProducto: '', valorDomicilio: '0', ubicacion: '', fecha: getTodayFormatted() 
+                cliente: '', valorProducto: '', valorDomicilio: '0', ubicacion: '', fecha: getTodayFormatted() 
             });
             const [pagosActuales, setPagosActuales] = useState([]);
             const [nuevoPago, setNuevoPago] = useState({ metodo: 'Efectivo', monto: '' });
 
             const appId = 'ferco-farma-tracker';
 
-            // --- AUTENTICACIÓN ---
             useEffect(() => {
                 if (!window.FB) return;
                 const { getAuth, signInAnonymously, onAuthStateChanged } = window.FB;
-                
                 const app = getSafeFirebaseApp();
                 if(!app) return;
-
                 const auth = getAuth(app);
-                
-                signInAnonymously(auth).catch(err => {
-                    console.error("Auth Error:", err);
-                    showNotification("Asegúrate de haber activado Auth Anónima", "error");
-                });
-
+                signInAnonymously(auth).catch(err => console.error("Auth Error:", err));
                 const unsubscribe = onAuthStateChanged(auth, setUser);
                 return () => unsubscribe();
             }, []);
 
-            // --- FIRESTORE DATOS ---
             useEffect(() => {
                 if (!user || !window.FB) return;
                 const { getFirestore, collection, onSnapshot } = window.FB;
-                
                 const app = getSafeFirebaseApp();
                 const db = getFirestore(app);
 
-                const regsRef = collection(db, 'artifacts', appId, 'public', 'data', 'registros');
-                const unsubRegs = onSnapshot(regsRef, 
-                    (snapshot) => {
-                        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-                        setRegistros(data.sort((a, b) => b.timestamp - a.timestamp));
-                    },
-                    (error) => {
-                        console.error("Firestore Error:", error);
-                        showNotification("Error conectando a base de datos. Revisa las Reglas.", "error");
-                    }
-                );
+                const unsubRegs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'registros'), (snapshot) => {
+                    const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+                    setRegistros(data.sort((a, b) => b.timestamp - a.timestamp));
+                });
 
-                const clientesRef = collection(db, 'artifacts', appId, 'public', 'data', 'clientes');
-                const unsubClientes = onSnapshot(clientesRef, 
-                    (snapshot) => {
-                        const lista = snapshot.docs.map(doc => doc.data().nombre);
-                        setClientesSugeridos([...new Set(lista)].sort());
-                    }
-                );
+                const unsubClientes = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'clientes'), (snapshot) => {
+                    const lista = snapshot.docs.map(doc => doc.data().nombre);
+                    setClientesSugeridos([...new Set(lista)].sort());
+                });
 
                 return () => { unsubRegs(); unsubClientes(); };
             }, [user]);
 
-            useEffect(() => {
-                if (window.lucide) window.lucide.createIcons();
-            });
+            useEffect(() => { if (window.lucide) window.lucide.createIcons(); });
 
-            useEffect(() => {
-                localStorage.setItem('ferco_operador_activo', operadorActivo);
-            }, [operadorActivo]);
+            useEffect(() => { localStorage.setItem('ferco_operador_activo', operadorActivo); }, [operadorActivo]);
 
             const showNotification = (msg, type = 'success') => {
                 setNotification({ msg, type });
@@ -182,6 +159,17 @@
             const totalPagado = pagosActuales.reduce((sum, p) => sum + p.monto, 0);
             const diferencia = totalEsperado - totalPagado;
 
+            // --- LÓGICA DE PRODUCTOS ---
+            const agregarProductoALista = () => {
+                if (!productoActual) return;
+                setListaProductos([...listaProductos, productoActual]);
+                setProductoActual('');
+            };
+
+            const quitarProductoDeLista = (index) => {
+                setListaProductos(listaProductos.filter((_, i) => i !== index));
+            };
+
             const agregarPagoALista = () => {
                 const monto = parseFloat(nuevoPago.monto);
                 if (!monto || monto <= 0) return;
@@ -199,30 +187,21 @@
                     const match = rawTemplate.match(regex);
                     return match ? match[1].trim() : '';
                 };
-
-                const clienteExt = extract(/Cliente:\s*(.*)/i);
                 const pedidoExt = extract(/Pedido:\s*(.*)/i);
-                const ubicacionExt = extract(/Ubicacion:\s*(.*)/i);
                 const valorPStr = extract(/Valor Pedido:\s*([\d.]+)/i);
                 const valorDStr = extract(/Valor Domi:\s*([\d.]+)/i);
-                const medioPagoExt = extract(/Medio de pago:\s*(.*)/i);
-
                 const valorP = parseFloat(valorPStr.replace(/\./g, '')) || 0;
                 const valorD = parseFloat(valorDStr.replace(/\./g, '')) || 0;
 
                 setFormData(prev => ({
                     ...prev,
-                    cliente: clienteExt || prev.cliente,
-                    producto: pedidoExt || prev.producto,
-                    ubicacion: ubicacionExt || prev.ubicacion,
+                    cliente: extract(/Cliente:\s*(.*)/i) || prev.cliente,
+                    ubicacion: extract(/Ubicacion:\s*(.*)/i) || prev.ubicacion,
                     valorProducto: valorP > 0 ? valorP.toString() : prev.valorProducto,
                     valorDomicilio: valorD > 0 ? valorD.toString() : prev.valorDomicilio,
                 }));
-
-                if (medioPagoExt && (valorP + valorD) > 0) {
-                    const metodoEncontrado = METODOS_PAGO.find(m => medioPagoExt.toLowerCase().includes(m.toLowerCase())) || 'Efectivo';
-                    setPagosActuales([{ id: Date.now().toString(), metodo: metodoEncontrado, monto: valorP + valorD }]);
-                }
+                
+                if (pedidoExt) setListaProductos(pedidoExt.split(',').map(p => p.trim()));
                 setRawTemplate('');
                 setShowTemplateArea(false);
                 showNotification('Plantilla cargada');
@@ -230,7 +209,7 @@
 
             const agregarRegistro = async (e) => {
                 e.preventDefault();
-                if (!user || !window.FB || Math.abs(diferencia) > 0.1 || !formData.producto) return;
+                if (!user || !window.FB || Math.abs(diferencia) > 0.1 || listaProductos.length === 0) return;
 
                 const { getFirestore, doc, setDoc } = window.FB;
                 const db = getFirestore(getSafeFirebaseApp());
@@ -238,6 +217,7 @@
                 const nuevoId = Date.now().toString();
                 const payload = {
                     ...formData,
+                    producto: listaProductos.join(', '), // Convertimos lista a texto para Firebase
                     valorProducto: parseFloat(formData.valorProducto) || 0,
                     valorDomicilio: parseFloat(formData.valorDomicilio) || 0,
                     pagos: pagosActuales,
@@ -252,20 +232,16 @@
                     const clientDocId = formData.cliente.toLowerCase().replace(/\s+/g, '_');
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientDocId), { nombre: formData.cliente.trim() });
                     
-                    setFormData({ cliente: '', producto: '', valorProducto: '', valorDomicilio: '0', ubicacion: '', fecha: getTodayFormatted() });
+                    setFormData({ cliente: '', valorProducto: '', valorDomicilio: '0', ubicacion: '', fecha: getTodayFormatted() });
+                    setListaProductos([]);
                     setPagosActuales([]);
                     showNotification('Registro guardado exitosamente');
-                } catch (err) { 
-                    console.error("Guardar Error:", err);
-                    showNotification('Error al guardar en base de datos', 'error'); 
-                }
+                } catch (err) { showNotification('Error al guardar', 'error'); }
             };
 
             const eliminarRegistro = async (id) => {
-                if (!user || !window.FB) return;
                 const { getFirestore, doc, deleteDoc } = window.FB;
                 const db = getFirestore(getSafeFirebaseApp());
-
                 try {
                     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registros', id));
                     showNotification('Registro eliminado');
@@ -277,13 +253,12 @@
                     const XLSX = await loadXLSX();
                     const data = registros.map(r => ({
                         Fecha: r.fecha, Hora: r.hora, Operador: r.operador, Cliente: r.cliente,
-                        Ubicación: r.ubicacion, Producto: r.producto, Total: (Number(r.valorProducto) || 0) + (Number(r.valorDomicilio) || 0)
+                        Ubicación: r.ubicacion, Productos: r.producto, Total: (Number(r.valorProducto) || 0) + (Number(r.valorDomicilio) || 0)
                     }));
                     const ws = XLSX.utils.json_to_sheet(data);
                     const wb = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
                     XLSX.writeFile(wb, `Reporte_Ferco_${new Date().getTime()}.xlsx`);
-                    showNotification('Reporte generado');
                 } catch (err) { showNotification('Error al exportar', 'error'); }
             };
 
@@ -307,161 +282,155 @@
                     <div className="max-w-7xl mx-auto px-4 pt-8">
                         <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-8">
                             <div className="flex items-center gap-6 group">
-                                <div className={`relative w-24 h-24 md:w-32 md:h-32 rounded-full overflow-hidden border-2 p-1 ${darkMode ? 'bg-black border-[#7c3aed]/50' : 'bg-white border-slate-200'}`}>
-                                    <img src="logo.jpg" alt="Logo" className="w-full h-full object-contain rounded-full" onError={(e) => { e.target.style.display = 'none'; }} />
+                                <div className={`relative w-24 h-24 rounded-full overflow-hidden border-2 p-1 ${darkMode ? 'bg-black border-[#7c3aed]/50' : 'bg-white border-slate-200'}`}>
                                     <Icon name="flask-conical" size={40} className="w-full h-full p-6 text-violet-500 opacity-20" />
                                 </div>
                                 <div>
                                     <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter leading-none">
                                         <span className={theme.primary}>FERCO</span> <span className={theme.accent}>FARMA</span>
                                     </h1>
-                                    <p className="text-[10px] uppercase tracking-[0.4em] font-black opacity-40 mt-3 text-center md:text-left">Certified Quality Interface</p>
+                                    <p className="text-[10px] uppercase tracking-[0.4em] font-black opacity-40 mt-3">Certified Quality Interface</p>
                                 </div>
                             </div>
-
-                            <div className="flex items-center gap-4">
-                                <button onClick={() => setDarkMode(!darkMode)} className={`p-4 rounded-2xl border ${theme.card}`}>
-                                    <Icon name={darkMode ? "sun" : "moon"} size={20} className={darkMode ? "text-amber-400" : "text-violet-600"} />
-                                </button>
-                            </div>
+                            <button onClick={() => setDarkMode(!darkMode)} className={`p-4 rounded-2xl border ${theme.card}`}>
+                                <Icon name={darkMode ? "sun" : "moon"} size={20} className={darkMode ? "text-amber-400" : "text-violet-600"} />
+                            </button>
                         </header>
 
-                        <div className="animate-fade-in">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                                {[
-                                    { label: 'Mercancía Total', val: totales.productos, icon: 'shopping-bag', color: 'border-violet-500' },
-                                    { label: 'Ingresos Valor Domi', val: totales.domicilios, icon: 'smartphone', color: 'border-amber-500' },
-                                    { label: 'Balance de Caja', val: totales.total, icon: 'zap', color: 'border-white' }
-                                ].map((stat, i) => (
-                                    <div key={i} className={`p-8 rounded-[2.5rem] border-l-[6px] transition-all hover:translate-y-[-4px] ${stat.color} ${theme.card}`}>
-                                        <div className="flex justify-between items-start mb-2">
-                                            <p className="text-[10px] font-black uppercase opacity-40 tracking-widest">{stat.label}</p>
-                                            <Icon name={stat.icon} size={16} className={i === 2 ? theme.accent : theme.primary} />
-                                        </div>
-                                        <p className="text-4xl font-black italic tracking-tight font-mono">${stat.val.toLocaleString()}</p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            {[
+                                { label: 'Mercancía Total', val: totales.productos, icon: 'shopping-bag', color: 'border-violet-500' },
+                                { label: 'Ingresos Valor Domi', val: totales.domicilios, icon: 'smartphone', color: 'border-amber-500' },
+                                { label: 'Balance de Caja', val: totales.total, icon: 'zap', color: 'border-white' }
+                            ].map((stat, i) => (
+                                <div key={i} className={`p-8 rounded-[2.5rem] border-l-[6px] ${stat.color} ${theme.card}`}>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <p className="text-[10px] font-black uppercase opacity-40 tracking-widest">{stat.label}</p>
+                                        <Icon name={stat.icon} size={16} className={i === 2 ? theme.accent : theme.primary} />
                                     </div>
+                                    <p className="text-4xl font-black italic tracking-tight font-mono">${stat.val.toLocaleString()}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex justify-center mb-8">
+                            <div className="flex gap-2 p-1.5 rounded-2xl bg-black/40 border border-white/5">
+                                {OPERADORES.map(op => (
+                                    <button key={op} onClick={() => setOperadorActivo(op)} className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all ${operadorActivo === op ? 'bg-violet-600 text-white' : 'opacity-30'}`}>{op}</button>
                                 ))}
                             </div>
+                        </div>
 
-                            <div className="flex justify-center mb-8">
-                                <div className="flex gap-2 p-1.5 rounded-2xl bg-black/40 border border-white/5">
-                                    {OPERADORES.map(op => (
-                                        <button key={op} onClick={() => setOperadorActivo(op)} className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all ${operadorActivo === op ? 'bg-violet-600 text-white shadow-md' : 'opacity-30 hover:opacity-100'}`}>{op}</button>
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                            <section className="lg:col-span-5 xl:col-span-4 space-y-6">
+                                <div className={`p-8 rounded-[3rem] border ${theme.card}`}>
+                                    <h2 className="text-xl font-black mb-6 flex items-center gap-3 italic uppercase tracking-tighter"><Icon name="zap" size={18} className={theme.accent} /> Datos de Pedido</h2>
+                                    <form onSubmit={agregarRegistro} className="space-y-4">
+                                        <input type="date" className={`w-full px-6 py-4 rounded-2xl border font-bold ${theme.input}`} value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
+                                        <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Identidad del Cliente" value={formData.cliente} onChange={e => setFormData({...formData, cliente: e.target.value})} />
+                                        <datalist id="clients">{clientesSugeridos.map(c => <option key={c} value={c} />)}</datalist>
+                                        
+                                        {/* SECCIÓN MULTIPRODUCTO */}
+                                        <div className="space-y-2">
+                                            <div className="flex gap-2">
+                                                <select className={`flex-1 px-4 py-4 rounded-2xl border font-bold ${theme.input}`} value={productoActual} onChange={e => setProductoActual(e.target.value)}>
+                                                    <option value="">Añadir Producto...</option>
+                                                    {PRODUCTOS_DISPONIBLES.map(p => <option key={p} value={p}>{p}</option>)}
+                                                </select>
+                                                <button type="button" onClick={agregarProductoALista} className="px-6 rounded-2xl bg-violet-600 text-white font-black">+</button>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 min-h-[40px] p-2 bg-black/20 rounded-xl border border-white/5">
+                                                {listaProductos.length === 0 && <span className="text-[10px] opacity-30 italic p-1">No hay productos añadidos...</span>}
+                                                {listaProductos.map((p, idx) => (
+                                                    <span key={idx} className="flex items-center gap-2 bg-violet-600/20 text-violet-400 px-3 py-1 rounded-lg text-[10px] font-black border border-violet-500/30">
+                                                        {p} <button type="button" onClick={() => quitarProductoDeLista(idx)} className="text-red-500 hover:text-red-400">×</button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <input className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Ubicación / Sector" value={formData.ubicacion} onChange={e => setFormData({...formData, ubicacion: e.target.value})} />
+                                        
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold uppercase ml-2 opacity-50 italic">Valor Producto $</label>
+                                                <input required type="number" className={`w-full px-6 py-4 rounded-2xl border font-black ${theme.input}`} value={formData.valorProducto} onChange={e => setFormData({...formData, valorProducto: e.target.value})} />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold uppercase ml-2 opacity-50 italic">Valor Domi $</label>
+                                                <input type="number" className={`w-full px-6 py-4 rounded-2xl border font-black ${theme.input}`} value={formData.valorDomicilio} onChange={e => setFormData({...formData, valorDomicilio: e.target.value})} />
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-4">
+                                            <div className="flex justify-between items-center mb-4 text-[10px] font-black uppercase opacity-50">
+                                                <span>Paga con</span> <span className={diferencia === 0 ? 'text-[#39ff14]' : 'text-amber-500'}>Falta: ${diferencia.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex gap-2 mb-4">
+                                                <select className={`flex-1 px-3 py-3 rounded-xl border text-xs font-bold ${theme.input}`} value={nuevoPago.metodo} onChange={e => setNuevoPago({...nuevoPago, metodo: e.target.value})}>
+                                                    {METODOS_PAGO.map(m => <option key={m} value={m}>{m}</option>)}
+                                                </select>
+                                                <input type="number" placeholder="$" className={`w-24 px-3 py-3 rounded-xl border font-black text-xs ${theme.input}`} value={nuevoPago.monto} onChange={e => setNuevoPago({...nuevoPago, monto: e.target.value})} />
+                                                <button type="button" onClick={agregarPagoALista} className="p-3 rounded-xl bg-violet-600 text-white"><Icon name="plus" size={18} /></button>
+                                            </div>
+                                            <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
+                                                {pagosActuales.map(p => (
+                                                    <div key={p.id} className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/5">
+                                                        <span className="text-[9px] font-black uppercase opacity-50">{p.metodo}</span>
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="text-xs font-bold italic">${p.monto.toLocaleString()}</span>
+                                                            <button type="button" onClick={() => quitarPagoDeLista(p.id)} className="text-red-500">×</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        
+                                        <button type="submit" disabled={diferencia !== 0 || listaProductos.length === 0} className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest disabled:opacity-20 ${theme.button}`}>Guardar Registro</button>
+                                    </form>
+                                </div>
+                            </section>
+
+                            <section className="lg:col-span-7 xl:col-span-8 space-y-6">
+                                <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                                    <div className="relative w-full md:w-96 group">
+                                        <Icon name="search" size={18} className="absolute left-5 top-4 text-slate-500" />
+                                        <input className={`w-full pl-12 pr-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Filtrar por cliente o producto..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                                    </div>
+                                    <button onClick={exportarExcel} className={`flex items-center gap-2 px-8 py-4 rounded-2xl text-[11px] font-black uppercase ${darkMode ? 'bg-white text-black' : 'bg-slate-900 text-white'}`}><Icon name="download" size={16} /> Excel</button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {registros.filter(r => r.cliente.toLowerCase().includes(searchTerm.toLowerCase()) || r.producto.toLowerCase().includes(searchTerm.toLowerCase())).map(reg => (
+                                        <div key={reg.id} className={`p-6 rounded-[2.5rem] border ${theme.card}`}>
+                                            <div className="flex flex-col md:flex-row justify-between gap-6">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-3">
+                                                        <span className="text-[9px] font-black px-2 py-1 rounded bg-violet-600/10 text-violet-400 border border-violet-500/20">{reg.fecha}</span>
+                                                        <span className="text-[9px] font-black px-2 py-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 uppercase italic">{reg.operador}</span>
+                                                        <h3 className="text-xl font-black italic uppercase">{reg.cliente}</h3>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-4 opacity-50 text-xs font-bold italic">
+                                                        <span className="flex items-center gap-1.5"><Icon name="zap" size={14} className="text-amber-500" /> {reg.producto}</span>
+                                                        {reg.ubicacion && <span className="flex items-center gap-1.5"><Icon name="map-pin" size={14} /> {reg.ubicacion}</span>}
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col md:items-end justify-center min-w-[140px]">
+                                                    <p className="text-3xl font-black italic">${((Number(reg.valorProducto) || 0) + (Number(reg.valorDomicilio) || 0)).toLocaleString()}</p>
+                                                    <div className="flex flex-wrap md:justify-end gap-1 mt-2">
+                                                        {(reg.pagos || []).map((p, idx) => (
+                                                            <span key={idx} className="text-[8px] font-black uppercase px-2 py-0.5 rounded border border-white/10 opacity-40">{p.metodo}</span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center justify-end border-l border-white/5 pl-4">
+                                                    <button onClick={() => eliminarRegistro(reg.id)} className="text-slate-500 hover:text-red-500 transition-all"><Icon name="trash-2" size={20} /></button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                                <section className="lg:col-span-5 xl:col-span-4 space-y-6">
-                                    <button onClick={() => setShowTemplateArea(!showTemplateArea)} className={`w-full py-4 rounded-2xl border-2 border-dashed flex items-center justify-center gap-3 font-black text-[11px] uppercase tracking-widest transition-all ${showTemplateArea ? 'border-amber-500 text-amber-500 bg-amber-500/5' : 'border-violet-500/30 opacity-60 hover:opacity-100'}`}>
-                                        <Icon name="file-text" size={18} /> {showTemplateArea ? 'Cerrar Plantilla' : 'Pegar Plantilla Rápida'}
-                                    </button>
-
-                                    {showTemplateArea && (
-                                        <div className={`p-6 rounded-[2rem] border-2 border-amber-500/20 ${theme.card}`}>
-                                            <textarea className={`w-full h-32 p-4 rounded-2xl outline-none border font-mono text-xs mb-4 ${theme.input}`} placeholder="Pegar datos aquí..." value={rawTemplate} onChange={e => setRawTemplate(e.target.value)} />
-                                            <button onClick={procesarPlantilla} className="w-full py-3 rounded-xl bg-amber-500 text-black font-black uppercase text-[10px] hover:brightness-110 transition-all">Procesar Datos</button>
-                                        </div>
-                                    )}
-
-                                    <div className={`p-8 rounded-[3rem] border ${theme.card}`}>
-                                        <h2 className="text-xl font-black mb-8 flex items-center gap-3 italic uppercase tracking-tighter"><Icon name="zap" size={18} className={theme.accent} /> Datos de Pedido</h2>
-                                        <form onSubmit={agregarRegistro} className="space-y-4">
-                                            <input type="date" className={`w-full px-6 py-4 rounded-2xl outline-none border font-bold ${theme.input}`} value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
-                                            <input required list="clients" className={`w-full px-6 py-4 rounded-2xl outline-none border ${theme.input}`} placeholder="Identidad del Cliente" value={formData.cliente} onChange={e => setFormData({...formData, cliente: e.target.value})} />
-                                            <datalist id="clients">{clientesSugeridos.map(c => <option key={c} value={c} />)}</datalist>
-                                            
-                                            <select required className={`w-full px-6 py-4 rounded-2xl outline-none border appearance-none font-bold ${theme.input}`} value={formData.producto} onChange={e => setFormData({...formData, producto: e.target.value})}>
-                                                <option value="" disabled>Seleccionar Producto</option>
-                                                {PRODUCTOS_DISPONIBLES.map(p => <option key={p} value={p}>{p}</option>)}
-                                            </select>
-
-                                            <input className={`w-full px-6 py-4 rounded-2xl outline-none border ${theme.input}`} placeholder="Ubicación / Sector" value={formData.ubicacion} onChange={e => setFormData({...formData, ubicacion: e.target.value})} />
-                                            
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-bold uppercase ml-2 opacity-50 italic tracking-widest">valor producto $</label>
-                                                    <input required type="number" className={`w-full px-6 py-4 rounded-2xl outline-none border font-black ${theme.input}`} value={formData.valorProducto} onChange={e => setFormData({...formData, valorProducto: e.target.value})} />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[10px] font-bold uppercase ml-2 opacity-50 italic tracking-widest">Valor Domi $</label>
-                                                    <input type="number" className={`w-full px-6 py-4 rounded-2xl outline-none border font-black ${theme.input}`} value={formData.valorDomicilio} onChange={e => setFormData({...formData, valorDomicilio: e.target.value})} />
-                                                </div>
-                                            </div>
-
-                                            <div className="pt-6 border-t border-white/5">
-                                                <div className="flex justify-between items-center mb-4 text-[10px] font-black uppercase opacity-50">
-                                                    <span>Paga con</span> <span className={diferencia === 0 ? 'text-[#39ff14]' : 'text-amber-500'}>Falta: ${diferencia.toLocaleString()}</span>
-                                                </div>
-                                                <div className="flex gap-2 mb-4">
-                                                    <select className={`flex-1 px-3 py-3 rounded-xl border text-xs font-bold ${theme.input}`} value={nuevoPago.metodo} onChange={e => setNuevoPago({...nuevoPago, metodo: e.target.value})}>
-                                                        {METODOS_PAGO.map(m => <option key={m} value={m}>{m}</option>)}
-                                                    </select>
-                                                    <input type="number" placeholder="$" className={`w-24 px-3 py-3 rounded-xl border font-black text-xs ${theme.input}`} value={nuevoPago.monto} onChange={e => setNuevoPago({...nuevoPago, monto: e.target.value})} />
-                                                    <button type="button" onClick={agregarPagoALista} className="p-3 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-all"><Icon name="plus" size={18} /></button>
-                                                </div>
-                                                <div className="space-y-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                                                    {pagosActuales.map(p => (
-                                                        <div key={p.id} className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/5">
-                                                            <span className="text-[9px] font-black uppercase opacity-50 tracking-tighter">{p.metodo}</span>
-                                                            <div className="flex items-center gap-3">
-                                                                <span className="text-xs font-bold italic">${p.monto.toLocaleString()}</span>
-                                                                <button type="button" onClick={() => quitarPagoDeLista(p.id)} className="text-red-500"><Icon name="x" size={14} /></button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            
-                                            <button type="submit" disabled={Math.abs(diferencia) > 0.1 || !formData.producto} className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest transition-all disabled:opacity-20 ${theme.button}`}>Guardar Registro</button>
-                                        </form>
-                                    </div>
-                                </section>
-
-                                <section className="lg:col-span-7 xl:col-span-8 space-y-6">
-                                    <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                                        <div className="relative w-full md:w-96 group">
-                                            <Icon name="search" size={18} className="absolute left-5 top-4 text-slate-500" />
-                                            <input className={`w-full pl-12 pr-6 py-4 rounded-2xl outline-none border ${theme.input}`} placeholder="Filtrar por cliente o producto..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                                        </div>
-                                        <button onClick={exportarExcel} className={`flex items-center gap-2 px-8 py-4 rounded-2xl text-[11px] font-black uppercase transition-all shadow-lg ${darkMode ? 'bg-white text-black' : 'bg-slate-900 text-white'}`}><Icon name="download" size={16} /> Excel</button>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        {registros.filter(r => 
-                                            r.cliente.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                            r.producto.toLowerCase().includes(searchTerm.toLowerCase())
-                                        ).map(reg => (
-                                            <div key={reg.id} className={`p-6 rounded-[2.5rem] border transition-all hover:border-violet-500/50 hover:translate-y-[-2px] ${theme.card}`}>
-                                                <div className="flex flex-col md:flex-row justify-between gap-6">
-                                                    <div className="flex-1">
-                                                        <div className="flex items-center gap-3 mb-3">
-                                                            <span className="text-[9px] font-black px-2 py-1 rounded bg-violet-600/10 text-violet-400 border border-violet-500/20">{reg.fecha}</span>
-                                                            <span className="text-[9px] font-black px-2 py-1 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 uppercase italic tracking-tighter">{reg.operador}</span>
-                                                            <h3 className="text-xl font-black italic uppercase tracking-tight">{reg.cliente}</h3>
-                                                        </div>
-                                                        <div className="flex flex-wrap gap-4 opacity-50 text-xs font-bold italic">
-                                                            <span className="flex items-center gap-1.5"><Icon name="zap" size={14} className="text-amber-500" /> {reg.producto}</span>
-                                                            {reg.ubicacion && <span className="flex items-center gap-1.5"><Icon name="map-pin" size={14} /> {reg.ubicacion}</span>}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex flex-col md:items-end justify-center min-w-[140px]">
-                                                        <p className="text-3xl font-black italic tracking-tighter text-right">${((Number(reg.valorProducto) || 0) + (Number(reg.valorDomicilio) || 0)).toLocaleString()}</p>
-                                                        <div className="flex flex-wrap md:justify-end gap-1 mt-2">
-                                                            {(reg.pagos || []).map((p, idx) => (
-                                                                <span key={idx} className="text-[8px] font-black uppercase px-2 py-0.5 rounded border border-white/10 opacity-40">{p.metodo}</span>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center justify-end border-l border-white/5 pl-4 ml-2">
-                                                        <button onClick={() => eliminarRegistro(reg.id)} className="p-3 text-slate-500 hover:text-red-500 transition-all hover:scale-110"><Icon name="trash-2" size={20} /></button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </section>
-                            </div>
+                            </section>
                         </div>
                     </div>
                 </div>
