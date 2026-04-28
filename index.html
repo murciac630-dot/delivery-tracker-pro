@@ -282,18 +282,24 @@
                 };
 
                 try {
+                    // Guardado principal del Registro
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registros', nuevoId), payload);
                     
-                    const clientDocId = clienteSaneado.toLowerCase().replace(/\s+/g, '_');
-                    if (clientDocId) {
-                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientDocId), { 
-                            nombre: clienteSaneado,
-                            ubicacion: ubicacionSaneada 
-                        }, { merge: true });
+                    // Aislamos el guardado del cliente en su propio try/catch para que NUNCA bloquee la limpieza
+                    try {
+                        // Saneamiento extremo: Solo permitimos letras y números en el ID de Firebase
+                        const clientDocId = clienteSaneado.toLowerCase().replace(/[^a-z0-9]/gi, '_');
+                        if (clientDocId) {
+                            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientDocId), { 
+                                nombre: clienteSaneado,
+                                ubicacion: ubicacionSaneada 
+                            }, { merge: true });
+                        }
+                    } catch (clientErr) {
+                        console.warn("Aviso interno: El perfil del cliente tuvo un error, pero el registro se guardó.", clientErr);
                     }
                     
                     // --- 2. BLOQUE DE LIMPIEZA PROFUNDA DE ESTADOS ---
-                    // Al devolver las variables a un texto vacío (''), los campos de pantalla se limpian.
                     setFormData({ 
                         cliente: '', 
                         valorProducto: '', 
@@ -505,7 +511,8 @@
                                             </div>
                                         </div>
                                         
-                                        <button type="submit" disabled={diferencia !== 0 || listaProductos.length === 0} className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest disabled:opacity-20 ${theme.button}`}>Guardar Registro</button>
+                                        {/* MODIFICACIÓN DE UX: Quitamos el "disabled" para permitir que las notificaciones de error se muestren al hacer clic */}
+                                        <button type="submit" className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest transition-all hover:scale-[1.02] ${theme.button}`}>Guardar Registro</button>
                                     </form>
                                 </div>
                             </section>
