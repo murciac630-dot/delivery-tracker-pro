@@ -50,13 +50,15 @@
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useMemo } = React;
 
+        // Utilizamos la configuración dinámica si existe, sino usamos el fallback (tu base de datos)
         const firebaseConfig = typeof __firebase_config !== "undefined" ? JSON.parse(__firebase_config) : {
-            apiKey: "AIzaSyAb9-1VyhRjQgmel-7eOQfHJEzg5Ljy_9k",
-            authDomain: "ffffff-84406.firebaseapp.com",
-            projectId: "ffffff-84406",
-            storageBucket: "ffffff-84406.firebasestorage.app",
-            messagingSenderId: "232467508280",
-            appId: "1:232467508280:web:6dd2cbd647dedffdfa0acd"
+            apiKey: "AIzaSyB8Ei-GTiqedjsFy09XVujGb94mzkBmVOU",
+            authDomain: "ferco-farma.firebaseapp.com",
+            projectId: "ferco-farma",
+            storageBucket: "ferco-farma.firebasestorage.app",
+            messagingSenderId: "974529589553",
+            appId: "1:974529589553:web:6ed8abcdb6eec366514010",
+            measurementId: "G-33N20638TB"
         };
 
         const PRODUCTOS_DISPONIBLES = ["MP", "BT", "GDT", "MGDT", "BP", "BC", "FN", "FP", "FG", "K", "G30", "G20", "G10", "MD", "MGM"];
@@ -245,21 +247,40 @@
             const agregarRegistro = async (e) => {
                 e.preventDefault();
                 
-                // --- 1. VALIDACIONES VISUALES DEFENSIVAS ---
-                // En lugar de morir en silencio, ahora la app te avisa qué falta
+                // --- 1. MEJORA DE UX: AUTO-COMPLETADO INTELIGENTE ---
+                // Si el usuario escribió un producto o pago pero olvidó presionar el botón "+", lo agregamos por él.
+                let finalProductos = [...listaProductos];
+                if (productoActual !== '') {
+                    const cantidadValidada = parseInt(cantidadActual) > 0 ? parseInt(cantidadActual) : 1;
+                    finalProductos.push(`${cantidadValidada}x ${productoActual}`);
+                }
+
+                let finalPagos = [...pagosActuales];
+                let montoPendiente = parseFloat(nuevoPago.monto);
+                if (montoPendiente > 0) {
+                    finalPagos.push({ id: Date.now().toString(), metodo: nuevoPago.metodo, monto: montoPendiente });
+                }
+
+                // Recalculamos la diferencia matemática final
+                const totalPagadoCheck = finalPagos.reduce((sum, p) => sum + p.monto, 0);
+                const totalEsperadoCheck = (parseFloat(formData.valorProducto) || 0) + (parseFloat(formData.valorDomicilio) || 0);
+                const diferenciaCheck = totalEsperadoCheck - totalPagadoCheck;
+
+                // --- 2. VALIDACIONES VISUALES DEFENSIVAS ---
                 if (!user || !window.FB) {
-                    showNotification('Aún conectando a la base de datos...', 'error');
+                    showNotification('Error: Firebase no está conectado. Revisa la Autenticación.', 'error');
                     return;
                 }
-                if (listaProductos.length === 0) {
-                    showNotification('Debes añadir al menos un producto', 'error');
+                if (finalProductos.length === 0) {
+                    showNotification('Fallo: Debes añadir al menos un producto al pedido', 'error');
                     return;
                 }
-                if (Math.abs(diferencia) > 0.1) {
-                    showNotification('El total pagado no coincide con el valor del producto', 'error');
+                if (Math.abs(diferenciaCheck) > 0.1) {
+                    showNotification(`Fallo: El total pagado no cuadra. Faltan $${diferenciaCheck}`, 'error');
                     return;
                 }
 
+                // Todo en orden, preparamos el guardado a la Nube
                 const { getFirestore, doc, setDoc } = window.FB;
                 const db = getFirestore(getSafeFirebaseApp());
                 const nuevoId = Date.now().toString();
@@ -270,10 +291,10 @@
                 const payload = {
                     cliente: clienteSaneado,
                     ubicacion: ubicacionSaneada,
-                    producto: listaProductos.join(', '), 
+                    producto: finalProductos.join(', '), 
                     valorProducto: parseFloat(formData.valorProducto) || 0,
                     valorDomicilio: parseFloat(formData.valorDomicilio) || 0,
-                    pagos: pagosActuales,
+                    pagos: finalPagos,
                     operador: operadorActivo,
                     fecha: formData.fecha,
                     hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -282,12 +303,10 @@
                 };
 
                 try {
-                    // Guardado principal del Registro
+                    // Guardado en Firebase
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registros', nuevoId), payload);
                     
-                    // Aislamos el guardado del cliente en su propio try/catch para que NUNCA bloquee la limpieza
                     try {
-                        // Saneamiento extremo: Solo permitimos letras y números en el ID de Firebase
                         const clientDocId = clienteSaneado.toLowerCase().replace(/[^a-z0-9]/gi, '_');
                         if (clientDocId) {
                             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientDocId), { 
@@ -296,10 +315,11 @@
                             }, { merge: true });
                         }
                     } catch (clientErr) {
-                        console.warn("Aviso interno: El perfil del cliente tuvo un error, pero el registro se guardó.", clientErr);
+                        console.warn("Aviso interno: Error en perfil cliente, pero el pedido se guardó.", clientErr);
                     }
                     
-                    // --- 2. BLOQUE DE LIMPIEZA PROFUNDA DE ESTADOS ---
+                    // --- 3. LIMPIEZA AUTOMÁTICA DE TODOS LOS CAMPOS ---
+                    // Una vez Firebase nos confirma que recibió los datos exitosamente, vaciamos el form
                     setFormData({ 
                         cliente: '', 
                         valorProducto: '', 
@@ -314,10 +334,10 @@
                     setCantidadActual(1);
                     setRawTemplate(''); 
                     
-                    showNotification('Registro guardado exitosamente');
+                    showNotification('Registro guardado exitosamente y formulario limpio');
                 } catch (err) { 
                     console.error("Error de Firebase:", err);
-                    showNotification(`Error al guardar: ${err.message}`, 'error'); 
+                    showNotification(`Error Firebase: Tu Base de Datos rechazó la escritura.`, 'error'); 
                 }
             };
 
@@ -511,7 +531,6 @@
                                             </div>
                                         </div>
                                         
-                                        {/* MODIFICACIÓN DE UX: Quitamos el "disabled" para permitir que las notificaciones de error se muestren al hacer clic */}
                                         <button type="submit" className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest transition-all hover:scale-[1.02] ${theme.button}`}>Guardar Registro</button>
                                     </form>
                                 </div>
