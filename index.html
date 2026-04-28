@@ -38,7 +38,6 @@
 
     <script type="module">
         import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-        // Añadimos signInWithCustomToken para cumplir con las reglas de seguridad
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
@@ -51,7 +50,6 @@
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useMemo } = React;
 
-        // Utilizamos la configuración dinámica si existe, sino usamos el fallback (tu base de datos)
         const firebaseConfig = typeof __firebase_config !== "undefined" ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyAb9-1VyhRjQgmel-7eOQfHJEzg5Ljy_9k",
             authDomain: "ffffff-84406.firebaseapp.com",
@@ -94,13 +92,11 @@
             const [showTemplateArea, setShowTemplateArea] = useState(false);
             const [rawTemplate, setRawTemplate] = useState('');
             
-            // NUEVO ESTADO: Controla si la imagen real logró cargar o no
             const [logoCargado, setLogoCargado] = useState(true);
 
             const getTodayFormatted = () => new Date().toISOString().split('T')[0];
             const [operadorActivo, setOperadorActivo] = useState(() => localStorage.getItem('ferco_operador_activo') || OPERADORES[0]);
 
-            // --- ESTADOS DE PRODUCTO ---
             const [listaProductos, setListaProductos] = useState([]); 
             const [productoActual, setProductoActual] = useState(''); 
             const [cantidadActual, setCantidadActual] = useState(1); 
@@ -111,7 +107,6 @@
             const [pagosActuales, setPagosActuales] = useState([]);
             const [nuevoPago, setNuevoPago] = useState({ metodo: 'Efectivo', monto: '' });
 
-            // Uso dinámico del ID de la aplicación 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'ferco-farma-tracker';
 
             useEffect(() => {
@@ -121,7 +116,6 @@
                 if(!app) return;
                 const auth = getAuth(app);
                 
-                // Autenticación robusta que previene el error "custom-token-mismatch"
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -250,11 +244,24 @@
 
             const agregarRegistro = async (e) => {
                 e.preventDefault();
-                if (!user || !window.FB || Math.abs(diferencia) > 0.1 || listaProductos.length === 0) return;
+                
+                // --- 1. VALIDACIONES VISUALES DEFENSIVAS ---
+                // En lugar de morir en silencio, ahora la app te avisa qué falta
+                if (!user || !window.FB) {
+                    showNotification('Aún conectando a la base de datos...', 'error');
+                    return;
+                }
+                if (listaProductos.length === 0) {
+                    showNotification('Debes añadir al menos un producto', 'error');
+                    return;
+                }
+                if (Math.abs(diferencia) > 0.1) {
+                    showNotification('El total pagado no coincide con el valor del producto', 'error');
+                    return;
+                }
 
                 const { getFirestore, doc, setDoc } = window.FB;
                 const db = getFirestore(getSafeFirebaseApp());
-
                 const nuevoId = Date.now().toString();
                 
                 const clienteSaneado = (formData.cliente || '').trim();
@@ -285,6 +292,8 @@
                         }, { merge: true });
                     }
                     
+                    // --- 2. BLOQUE DE LIMPIEZA PROFUNDA DE ESTADOS ---
+                    // Al devolver las variables a un texto vacío (''), los campos de pantalla se limpian.
                     setFormData({ 
                         cliente: '', 
                         valorProducto: '', 
@@ -350,10 +359,9 @@
                         <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-8">
                             <div className="flex items-center gap-6 group">
                                 
-                                {/* 1. CONTENEDOR CIRCULAR (Siempre se renderiza el círculo) */}
+                                {/* CONTENEDOR CIRCULAR */}
                                 <div className={`relative w-24 h-24 flex-shrink-0 rounded-full overflow-hidden border-2 p-1 transition-transform duration-500 group-hover:scale-105 ${darkMode ? 'bg-black border-[#7c3aed]/50' : 'bg-white border-slate-200'}`}>
                                     {logoCargado ? (
-                                        /* 2. SI HAY IMAGEN: La mostramos adaptada al círculo */
                                         <img 
                                             src="logo.jpg" 
                                             alt="Logo" 
@@ -361,12 +369,11 @@
                                             onError={() => setLogoCargado(false)} 
                                         />
                                     ) : (
-                                        /* 3. SI FALLA LA IMAGEN: Mostramos el matraz de respaldo */
                                         <Icon name="flask-conical" size={40} className="w-full h-full p-6 text-violet-500 opacity-20" />
                                     )}
                                 </div>
 
-                                {/* 4. TEXTO DE LA APP (Siempre visible, fuera de la condición) */}
+                                {/* TEXTO DE LA APP */}
                                 <div>
                                     <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter leading-none">
                                         <span className={theme.primary}>FERCO</span> <span className={theme.accent}>FARMA</span>
