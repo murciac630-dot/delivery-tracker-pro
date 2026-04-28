@@ -38,11 +38,12 @@
 
     <script type="module">
         import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+        // Añadimos signInWithCustomToken para cumplir con las reglas de seguridad
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
         window.FB = {
-            initializeApp, getApps, getApp, getAuth, signInAnonymously, onAuthStateChanged,
+            initializeApp, getApps, getApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
             getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc
         };
     </script>
@@ -50,7 +51,8 @@
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useMemo } = React;
 
-        const firebaseConfig = {
+        // Utilizamos la configuración dinámica si existe, sino usamos el fallback (tu base de datos)
+        const firebaseConfig = typeof __firebase_config !== "undefined" ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyAb9-1VyhRjQgmel-7eOQfHJEzg5Ljy_9k",
             authDomain: "ffffff-84406.firebaseapp.com",
             projectId: "ffffff-84406",
@@ -60,8 +62,8 @@
         };
 
         const PRODUCTOS_DISPONIBLES = ["MP", "BT", "GDT", "MGDT", "BP", "BC", "FN", "FP", "FG", "K", "G30", "G20", "G10", "MD", "MGM"];
-        const METODOS_PAGO = ["Efectivo","Transferencia", "Datafono", "Crédito", "Cruce"];
-        const OPERADORES = ["Cris_", "Felipe_", "Jhon_", "Cesar_"];
+        const METODOS_PAGO = ["Efectivo", "Nequi", "Daviplata", "Transferencia", "Tarjeta", "Crédito", "Cruce"];
+        const OPERADORES = ["Cris_", "Felipe_", "Jhon_"];
 
         const loadXLSX = () => {
             return new Promise((resolve) => {
@@ -91,12 +93,17 @@
             const [notification, setNotification] = useState(null);
             const [showTemplateArea, setShowTemplateArea] = useState(false);
             const [rawTemplate, setRawTemplate] = useState('');
+            
+            // NUEVO ESTADO: Controla si la imagen real logró cargar o no
+            const [logoCargado, setLogoCargado] = useState(true);
 
             const getTodayFormatted = () => new Date().toISOString().split('T')[0];
             const [operadorActivo, setOperadorActivo] = useState(() => localStorage.getItem('ferco_operador_activo') || OPERADORES[0]);
 
-            const [listaProductos, setListaProductos] = useState([]);
-            const [productoActual, setProductoActual] = useState('');
+            // --- ESTADOS DE PRODUCTO ---
+            const [listaProductos, setListaProductos] = useState([]); 
+            const [productoActual, setProductoActual] = useState(''); 
+            const [cantidadActual, setCantidadActual] = useState(1); 
 
             const [formData, setFormData] = useState({ 
                 cliente: '', valorProducto: '', valorDomicilio: '0', ubicacion: '', fecha: getTodayFormatted() 
@@ -104,15 +111,35 @@
             const [pagosActuales, setPagosActuales] = useState([]);
             const [nuevoPago, setNuevoPago] = useState({ metodo: 'Efectivo', monto: '' });
 
-            const appId = 'ferco-farma-tracker';
+            // Uso dinámico del ID de la aplicación 
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'ferco-farma-tracker';
 
             useEffect(() => {
                 if (!window.FB) return;
-                const { getAuth, signInAnonymously, onAuthStateChanged } = window.FB;
+                const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = window.FB;
                 const app = getSafeFirebaseApp();
                 if(!app) return;
                 const auth = getAuth(app);
-                signInAnonymously(auth).catch(err => console.error("Auth Error:", err));
+                
+                // Autenticación robusta que previene el error "custom-token-mismatch"
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            try {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } catch (tokenError) {
+                                console.warn("Fallo token personalizado, usando auth anónima...", tokenError);
+                                await signInAnonymously(auth);
+                            }
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (err) {
+                        console.error("Auth Error Total:", err);
+                    }
+                };
+                initAuth();
+                
                 const unsubscribe = onAuthStateChanged(auth, setUser);
                 return () => unsubscribe();
             }, []);
@@ -129,8 +156,9 @@
                 });
 
                 const unsubClientes = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'clientes'), (snapshot) => {
-                    const lista = snapshot.docs.map(doc => doc.data().nombre);
-                    setClientesSugeridos([...new Set(lista)].sort());
+                    const lista = snapshot.docs.map(doc => doc.data());
+                    const clientesUnicos = Array.from(new Map(lista.map(c => [c.nombre, c])).values());
+                    setClientesSugeridos(clientesUnicos.sort((a, b) => a.nombre.localeCompare(b.nombre)));
                 });
 
                 return () => { unsubRegs(); unsubClientes(); };
@@ -158,10 +186,25 @@
             const totalPagado = pagosActuales.reduce((sum, p) => sum + p.monto, 0);
             const diferencia = totalEsperado - totalPagado;
 
+            const handleClienteChange = (e) => {
+                const nombreIngresado = e.target.value;
+                setFormData(prev => ({ ...prev, cliente: nombreIngresado }));
+                
+                const clienteEncontrado = clientesSugeridos.find(c => c.nombre.toLowerCase() === nombreIngresado.toLowerCase());
+                if (clienteEncontrado && clienteEncontrado.ubicacion) {
+                    setFormData(prev => ({ ...prev, cliente: nombreIngresado, ubicacion: clienteEncontrado.ubicacion }));
+                    showNotification(`Ubicación autocompletada para ${nombreIngresado}`);
+                }
+            };
+
             const agregarProductoALista = () => {
                 if (!productoActual) return;
-                setListaProductos([...listaProductos, productoActual]);
+                const cantidadValidada = parseInt(cantidadActual) > 0 ? parseInt(cantidadActual) : 1;
+                const textoProducto = `${cantidadValidada}x ${productoActual}`;
+                
+                setListaProductos([...listaProductos, textoProducto]);
                 setProductoActual('');
+                setCantidadActual(1);
             };
 
             const quitarProductoDeLista = (index) => {
@@ -213,13 +256,19 @@
                 const db = getFirestore(getSafeFirebaseApp());
 
                 const nuevoId = Date.now().toString();
+                
+                const clienteSaneado = (formData.cliente || '').trim();
+                const ubicacionSaneada = (formData.ubicacion || '').trim();
+
                 const payload = {
-                    ...formData,
-                    producto: listaProductos.join(', '),
+                    cliente: clienteSaneado,
+                    ubicacion: ubicacionSaneada,
+                    producto: listaProductos.join(', '), 
                     valorProducto: parseFloat(formData.valorProducto) || 0,
                     valorDomicilio: parseFloat(formData.valorDomicilio) || 0,
                     pagos: pagosActuales,
                     operador: operadorActivo,
+                    fecha: formData.fecha,
                     hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                     timestamp: Date.now(),
                     creadoPor: user.uid
@@ -227,14 +276,34 @@
 
                 try {
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registros', nuevoId), payload);
-                    const clientDocId = formData.cliente.toLowerCase().replace(/\s+/g, '_');
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientDocId), { nombre: formData.cliente.trim() });
                     
-                    setFormData({ cliente: '', valorProducto: '', valorDomicilio: '0', ubicacion: '', fecha: getTodayFormatted() });
+                    const clientDocId = clienteSaneado.toLowerCase().replace(/\s+/g, '_');
+                    if (clientDocId) {
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientDocId), { 
+                            nombre: clienteSaneado,
+                            ubicacion: ubicacionSaneada 
+                        }, { merge: true });
+                    }
+                    
+                    setFormData({ 
+                        cliente: '', 
+                        valorProducto: '', 
+                        valorDomicilio: '0', 
+                        ubicacion: '', 
+                        fecha: getTodayFormatted() 
+                    });
                     setListaProductos([]);
                     setPagosActuales([]);
+                    setNuevoPago({ metodo: 'Efectivo', monto: '' });
+                    setProductoActual('');
+                    setCantidadActual(1);
+                    setRawTemplate(''); 
+                    
                     showNotification('Registro guardado exitosamente');
-                } catch (err) { showNotification('Error al guardar', 'error'); }
+                } catch (err) { 
+                    console.error("Error de Firebase:", err);
+                    showNotification(`Error al guardar: ${err.message}`, 'error'); 
+                }
             };
 
             const eliminarRegistro = async (id) => {
@@ -280,20 +349,29 @@
                     <div className="max-w-7xl mx-auto px-4 pt-8">
                         <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-8">
                             <div className="flex items-center gap-6 group">
-                                <div className="w-16 h-16 bg-white/10 rounded-2xl p-2 flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
+                                {/* SISTEMA DE LOGO INTELIGENTE: Falla = Muestra texto original, Éxito = Muestra Logo .jpg */}
+                                {logoCargado ? (
                                     <img 
                                         src="logo.jpg" 
-                                        alt="logo" 
-                                        className="w-full h-full object-contain" 
+                                        alt="Logotipo FERCO FARMA" 
+                                        className="h-28 md:h-36 object-contain drop-shadow-2xl transition-transform duration-500 group-hover:scale-105"
+                                        onError={() => setLogoCargado(false)} 
                                     />
-                                </div>
-                                <div>
-                                    <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter leading-none">
-                                        <span className={theme.primary}>FERCO</span> <span className={theme.accent}>FARMA</span>
-                                    </h1>
-                                    <p className="text-[10px] uppercase tracking-[0.4em] font-black opacity-40 mt-3">Certified Quality Interface</p>
-                                </div>
+                                ) : (
+                                    <>
+                                        <div className={`relative w-24 h-24 flex-shrink-0 rounded-full overflow-hidden border-2 p-1 ${darkMode ? 'bg-black border-[#7c3aed]/50' : 'bg-white border-slate-200'}`}>
+                                            <Icon name="flask-conical" size={40} className="w-full h-full p-6 text-violet-500 opacity-20" />
+                                        </div>
+                                        <div>
+                                            <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter leading-none">
+                                                <span className={theme.primary}>FERCO</span> <span className={theme.accent}>FARMA</span>
+                                            </h1>
+                                            <p className="text-[10px] uppercase tracking-[0.4em] font-black opacity-40 mt-3">Certified Quality Interface</p>
+                                        </div>
+                                    </>
+                                )}
                             </div>
+                            
                             <button onClick={() => setDarkMode(!darkMode)} className={`p-4 rounded-2xl border ${theme.card}`}>
                                 <Icon name={darkMode ? "sun" : "moon"} size={20} className={darkMode ? "text-amber-400" : "text-violet-600"} />
                             </button>
@@ -326,14 +404,43 @@
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                             <section className="lg:col-span-5 xl:col-span-4 space-y-6">
                                 <div className={`p-8 rounded-[3rem] border ${theme.card}`}>
-                                    <h2 className="text-xl font-black mb-6 flex items-center gap-3 italic uppercase tracking-tighter"><Icon name="zap" size={18} className={theme.accent} /> Datos de Pedido</h2>
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h2 className="text-xl font-black flex items-center gap-3 italic uppercase tracking-tighter"><Icon name="zap" size={18} className={theme.accent} /> Datos de Pedido</h2>
+                                        <button type="button" onClick={() => setShowTemplateArea(!showTemplateArea)} className="text-xs font-bold text-violet-500 hover:text-violet-400 flex items-center gap-1 transition-colors">
+                                            <Icon name="clipboard-paste" size={14} /> {showTemplateArea ? 'Ocultar' : 'Plantilla'}
+                                        </button>
+                                    </div>
+
+                                    {showTemplateArea && (
+                                        <div className="mb-6 p-4 rounded-2xl bg-black/10 border border-white/5 animate-fade-in space-y-3">
+                                            <p className="text-[9px] uppercase opacity-50 font-bold tracking-widest">Pega el texto aquí. Formato esperado: Cliente: [nombre], Ubicacion: [lugar]...</p>
+                                            <textarea 
+                                                className={`w-full px-4 py-3 rounded-xl border text-xs ${theme.input} custom-scrollbar focus:ring-1 focus:ring-violet-500`} 
+                                                rows="4" 
+                                                placeholder="Ej:&#10;Cliente: Juan Perez&#10;Ubicacion: Calle 10 #2-3&#10;Pedido: 2x MP, 1x BT&#10;Valor Pedido: 50000&#10;Valor Domi: 5000" 
+                                                value={rawTemplate} 
+                                                onChange={e => setRawTemplate(e.target.value)}
+                                            ></textarea>
+                                            <button type="button" onClick={procesarPlantilla} className="w-full py-3 bg-violet-600/20 text-violet-400 border border-violet-500/30 rounded-xl text-xs font-black uppercase hover:bg-violet-600/40 transition-colors">Extraer Datos</button>
+                                        </div>
+                                    )}
+
                                     <form onSubmit={agregarRegistro} className="space-y-4">
                                         <input type="date" className={`w-full px-6 py-4 rounded-2xl border font-bold ${theme.input}`} value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
-                                        <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Identidad del Cliente" value={formData.cliente} onChange={e => setFormData({...formData, cliente: e.target.value})} />
-                                        <datalist id="clients">{clientesSugeridos.map(c => <option key={c} value={c} />)}</datalist>
+                                        
+                                        <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Identidad del Cliente" value={formData.cliente} onChange={handleClienteChange} />
+                                        <datalist id="clients">{clientesSugeridos.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
                                         
                                         <div className="space-y-2">
                                             <div className="flex gap-2">
+                                                <input 
+                                                    type="number" 
+                                                    min="1" 
+                                                    placeholder="Cant."
+                                                    className={`w-20 md:w-24 px-4 py-4 rounded-2xl border font-black text-center ${theme.input}`} 
+                                                    value={cantidadActual} 
+                                                    onChange={e => setCantidadActual(e.target.value)} 
+                                                />
                                                 <select className={`flex-1 px-4 py-4 rounded-2xl border font-bold ${theme.input}`} value={productoActual} onChange={e => setProductoActual(e.target.value)}>
                                                     <option value="">Añadir Producto...</option>
                                                     {PRODUCTOS_DISPONIBLES.map(p => <option key={p} value={p}>{p}</option>)}
@@ -365,7 +472,7 @@
 
                                         <div className="pt-4">
                                             <div className="flex justify-between items-center mb-4 text-[10px] font-black uppercase opacity-50">
-                                                <span>Metodo de Pago</span> <span className={diferencia === 0 ? 'text-[#39ff14]' : 'text-amber-500'}>Falta: ${diferencia.toLocaleString()}</span>
+                                                <span>Paga con</span> <span className={diferencia === 0 ? 'text-[#39ff14]' : 'text-amber-500'}>Falta: ${diferencia.toLocaleString()}</span>
                                             </div>
                                             <div className="flex gap-2 mb-4">
                                                 <select className={`flex-1 px-3 py-3 rounded-xl border text-xs font-bold ${theme.input}`} value={nuevoPago.metodo} onChange={e => setNuevoPago({...nuevoPago, metodo: e.target.value})}>
