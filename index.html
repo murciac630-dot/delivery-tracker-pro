@@ -63,7 +63,7 @@
 
         const PRODUCTOS_DISPONIBLES = ["MP", "BT", "GDT", "MGDT", "BP", "BC", "FN", "FP", "FG", "K", "G30", "G20", "G10", "MD", "MGM"];
         const METODOS_PAGO = ["Efectivo", "Nequi", "Daviplata", "Transferencia", "Tarjeta", "Crédito", "Cruce"];
-        const OPERADORES = ["Cris_", "Felipe_", "Jhon_", "Cesar_"];
+        const OPERADORES = ["Cris", "Felipe", "Jhon", "Cesar"];
 
         const loadXLSX = () => {
             return new Promise((resolve) => {
@@ -349,27 +349,31 @@
                     <div className="max-w-7xl mx-auto px-4 pt-8">
                         <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-8">
                             <div className="flex items-center gap-6 group">
-                                {/* SISTEMA DE LOGO INTELIGENTE: Falla = Muestra texto original, Éxito = Muestra Logo .jpg */}
-                                {logoCargado ? (
-                                    <img 
-                                        src="logo.jpg" 
-                                        alt="Logotipo FERCO FARMA" 
-                                        className="h-28 md:h-36 object-contain drop-shadow-2xl transition-transform duration-500 group-hover:scale-105"
-                                        onError={() => setLogoCargado(false)} 
-                                    />
-                                ) : (
-                                    <>
-                                        <div className={`relative w-24 h-24 flex-shrink-0 rounded-full overflow-hidden border-2 p-1 ${darkMode ? 'bg-black border-[#7c3aed]/50' : 'bg-white border-slate-200'}`}>
-                                            <Icon name="flask-conical" size={40} className="w-full h-full p-6 text-violet-500 opacity-20" />
-                                        </div>
-                                        <div>
-                                            <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter leading-none">
-                                                <span className={theme.primary}>FERCO</span> <span className={theme.accent}>FARMA</span>
-                                            </h1>
-                                            <p className="text-[10px] uppercase tracking-[0.4em] font-black opacity-40 mt-3">Certified Quality Interface</p>
-                                        </div>
-                                    </>
-                                )}
+                                
+                                {/* 1. CONTENEDOR CIRCULAR (Siempre se renderiza el círculo) */}
+                                <div className={`relative w-24 h-24 flex-shrink-0 rounded-full overflow-hidden border-2 p-1 transition-transform duration-500 group-hover:scale-105 ${darkMode ? 'bg-black border-[#7c3aed]/50' : 'bg-white border-slate-200'}`}>
+                                    {logoCargado ? (
+                                        /* 2. SI HAY IMAGEN: La mostramos adaptada al círculo */
+                                        <img 
+                                            src="logo.jpg" 
+                                            alt="Logo" 
+                                            className="w-full h-full object-cover rounded-full"
+                                            onError={() => setLogoCargado(false)} 
+                                        />
+                                    ) : (
+                                        /* 3. SI FALLA LA IMAGEN: Mostramos el matraz de respaldo */
+                                        <Icon name="flask-conical" size={40} className="w-full h-full p-6 text-violet-500 opacity-20" />
+                                    )}
+                                </div>
+
+                                {/* 4. TEXTO DE LA APP (Siempre visible, fuera de la condición) */}
+                                <div>
+                                    <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter leading-none">
+                                        <span className={theme.primary}>FERCO</span> <span className={theme.accent}>FARMA</span>
+                                    </h1>
+                                    <p className="text-[10px] uppercase tracking-[0.4em] font-black opacity-40 mt-3">Certified Quality Interface</p>
+                                </div>
+
                             </div>
                             
                             <button onClick={() => setDarkMode(!darkMode)} className={`p-4 rounded-2xl border ${theme.card}`}>
@@ -428,7 +432,7 @@
                                     <form onSubmit={agregarRegistro} className="space-y-4">
                                         <input type="date" className={`w-full px-6 py-4 rounded-2xl border font-bold ${theme.input}`} value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
                                         
-                                        <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Identidad del Cliente" value={formData.cliente} onChange={handleClienteChange} />
+                                        <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Nombre del Cliente" value={formData.cliente} onChange={handleClienteChange} />
                                         <datalist id="clients">{clientesSugeridos.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
                                         
                                         <div className="space-y-2">
