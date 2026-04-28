@@ -63,7 +63,7 @@
 
         const PRODUCTOS_DISPONIBLES = ["MP", "BT", "GDT", "MGDT", "BP", "BC", "FN", "FP", "FG", "K", "G30", "G20", "G10", "MD", "MGM"];
         const METODOS_PAGO = ["Efectivo", "Nequi", "Daviplata", "Transferencia", "Tarjeta", "Crédito", "Cruce"];
-        const OPERADORES = ["Cris", "Felipe", "Jhon", "Cesar"];
+        const OPERADORES = ["Cris_", "Felipe_", "Jhon_"];
 
         const loadXLSX = () => {
             return new Promise((resolve) => {
@@ -432,7 +432,7 @@
                                     <form onSubmit={agregarRegistro} className="space-y-4">
                                         <input type="date" className={`w-full px-6 py-4 rounded-2xl border font-bold ${theme.input}`} value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
                                         
-                                        <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Nombre del Cliente" value={formData.cliente} onChange={handleClienteChange} />
+                                        <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Identidad del Cliente" value={formData.cliente} onChange={handleClienteChange} />
                                         <datalist id="clients">{clientesSugeridos.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
                                         
                                         <div className="space-y-2">
