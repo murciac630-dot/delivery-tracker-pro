@@ -4,18 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Registro FERCO_FARMA - Sistema de Gestión</title>
-    
+
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
+
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;0,900;1,900&display=swap');
-        
+
         body {
             font-family: 'Inter', sans-serif;
             margin: 0;
@@ -38,7 +38,6 @@
 
     <script type="module">
         import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-        // Añadimos signInWithCustomToken para cumplir con las reglas de seguridad
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
@@ -53,17 +52,17 @@
 
         // Utilizamos la configuración dinámica si existe, sino usamos el fallback (tu base de datos)
         const firebaseConfig = typeof __firebase_config !== "undefined" ? JSON.parse(__firebase_config) : {
-            apiKey: "AIzaSyAb9-1VyhRjQgmel-7eOQfHJEzg5Ljy_9k",
-            authDomain: "ffffff-84406.firebaseapp.com",
-            projectId: "ffffff-84406",
-            storageBucket: "ffffff-84406.firebasestorage.app",
-            messagingSenderId: "232467508280",
-            appId: "1:232467508280:web:6dd2cbd647dedffdfa0acd"
+            apiKey: "AIzaSyB8Ei-GTiqedjsFy09XVujGb94mzkBmVOU",
+            authDomain: "ferco-farma.firebaseapp.com",
+            projectId: "ferco-farma",
+            storageBucket: "ferco-farma.firebasestorage.app",
+            messagingSenderId: "974529589553",
+            appId: "1:974529589553:web:6ed8abcdb6eec366514010",
+            measurementId: "G-33N20638TB"
         };
-
-        const PRODUCTOS_DISPONIBLES = ["MP", "BT", "GDT", "MGDT", "BP", "BC", "FN", "FP", "FG", "K", "G30", "G20", "G10", "MD", "MGM"];
-        const METODOS_PAGO = ["Efectivo", "Nequi", "Daviplata", "Transferencia", "Tarjeta", "Crédito", "Cruce"];
-        const OPERADORES = ["Cris","Cesar", "Felipe", "Jhon"];
+        const PRODUCTOS_DISPONIBLES = ["MP", "BT", "GDT", "1/2GDT", "1/4DT", "BP", "BC", "FN", "FP", "FG", "K", "G30", "G20", "G10", "MD", "MGM", "SPTE", "PG", "PM", "PP",];
+        const METODOS_PAGO = ["Efectivo","Transferencia", "Datafono", "Crédito", "Cruce"];
+        const OPERADORES = ["Cris","Cesar", "Felipe", "Jhon", "Delivery_APP"];
 
         const loadXLSX = () => {
             return new Promise((resolve) => {
@@ -93,14 +92,12 @@
             const [notification, setNotification] = useState(null);
             const [showTemplateArea, setShowTemplateArea] = useState(false);
             const [rawTemplate, setRawTemplate] = useState('');
-            
-            // NUEVO ESTADO: Controla si la imagen real logró cargar o no
+
             const [logoCargado, setLogoCargado] = useState(true);
 
             const getTodayFormatted = () => new Date().toISOString().split('T')[0];
             const [operadorActivo, setOperadorActivo] = useState(() => localStorage.getItem('ferco_operador_activo') || OPERADORES[0]);
 
-            // --- ESTADOS DE PRODUCTO ---
             const [listaProductos, setListaProductos] = useState([]); 
             const [productoActual, setProductoActual] = useState(''); 
             const [cantidadActual, setCantidadActual] = useState(1); 
@@ -111,7 +108,6 @@
             const [pagosActuales, setPagosActuales] = useState([]);
             const [nuevoPago, setNuevoPago] = useState({ metodo: 'Efectivo', monto: '' });
 
-            // Uso dinámico del ID de la aplicación 
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'ferco-farma-tracker';
 
             useEffect(() => {
@@ -120,8 +116,7 @@
                 const app = getSafeFirebaseApp();
                 if(!app) return;
                 const auth = getAuth(app);
-                
-                // Autenticación robusta que previene el error "custom-token-mismatch"
+
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -139,7 +134,7 @@
                     }
                 };
                 initAuth();
-                
+
                 const unsubscribe = onAuthStateChanged(auth, setUser);
                 return () => unsubscribe();
             }, []);
@@ -189,7 +184,7 @@
             const handleClienteChange = (e) => {
                 const nombreIngresado = e.target.value;
                 setFormData(prev => ({ ...prev, cliente: nombreIngresado }));
-                
+
                 const clienteEncontrado = clientesSugeridos.find(c => c.nombre.toLowerCase() === nombreIngresado.toLowerCase());
                 if (clienteEncontrado && clienteEncontrado.ubicacion) {
                     setFormData(prev => ({ ...prev, cliente: nombreIngresado, ubicacion: clienteEncontrado.ubicacion }));
@@ -201,7 +196,7 @@
                 if (!productoActual) return;
                 const cantidadValidada = parseInt(cantidadActual) > 0 ? parseInt(cantidadActual) : 1;
                 const textoProducto = `${cantidadValidada}x ${productoActual}`;
-                
+
                 setListaProductos([...listaProductos, textoProducto]);
                 setProductoActual('');
                 setCantidadActual(1);
@@ -241,7 +236,7 @@
                     valorProducto: valorP > 0 ? valorP.toString() : prev.valorProducto,
                     valorDomicilio: valorD > 0 ? valorD.toString() : prev.valorDomicilio,
                 }));
-                
+
                 if (pedidoExt) setListaProductos(pedidoExt.split(',').map(p => p.trim()));
                 setRawTemplate('');
                 setShowTemplateArea(false);
@@ -250,23 +245,55 @@
 
             const agregarRegistro = async (e) => {
                 e.preventDefault();
-                if (!user || !window.FB || Math.abs(diferencia) > 0.1 || listaProductos.length === 0) return;
 
+                // --- 1. MEJORA DE UX: AUTO-COMPLETADO INTELIGENTE ---
+                // Si el usuario escribió un producto o pago pero olvidó presionar el botón "+", lo agregamos por él.
+                let finalProductos = [...listaProductos];
+                if (productoActual !== '') {
+                    const cantidadValidada = parseInt(cantidadActual) > 0 ? parseInt(cantidadActual) : 1;
+                    finalProductos.push(`${cantidadValidada}x ${productoActual}`);
+                }
+
+                let finalPagos = [...pagosActuales];
+                let montoPendiente = parseFloat(nuevoPago.monto);
+                if (montoPendiente > 0) {
+                    finalPagos.push({ id: Date.now().toString(), metodo: nuevoPago.metodo, monto: montoPendiente });
+                }
+
+                // Recalculamos la diferencia matemática final
+                const totalPagadoCheck = finalPagos.reduce((sum, p) => sum + p.monto, 0);
+                const totalEsperadoCheck = (parseFloat(formData.valorProducto) || 0) + (parseFloat(formData.valorDomicilio) || 0);
+                const diferenciaCheck = totalEsperadoCheck - totalPagadoCheck;
+
+                // --- 2. VALIDACIONES VISUALES DEFENSIVAS ---
+                if (!user || !window.FB) {
+                    showNotification('Error: Firebase no está conectado. Revisa la Autenticación.', 'error');
+                    return;
+                }
+                if (finalProductos.length === 0) {
+                    showNotification('Fallo: Debes añadir al menos un producto al pedido', 'error');
+                    return;
+                }
+                if (Math.abs(diferenciaCheck) > 0.1) {
+                    showNotification(`Fallo: El total pagado no cuadra. Faltan $${diferenciaCheck}`, 'error');
+                    return;
+                }
+
+                // Todo en orden, preparamos el guardado a la Nube
                 const { getFirestore, doc, setDoc } = window.FB;
                 const db = getFirestore(getSafeFirebaseApp());
-
                 const nuevoId = Date.now().toString();
-                
+
                 const clienteSaneado = (formData.cliente || '').trim();
                 const ubicacionSaneada = (formData.ubicacion || '').trim();
 
                 const payload = {
                     cliente: clienteSaneado,
                     ubicacion: ubicacionSaneada,
-                    producto: listaProductos.join(', '), 
+                    producto: finalProductos.join(', '), 
                     valorProducto: parseFloat(formData.valorProducto) || 0,
                     valorDomicilio: parseFloat(formData.valorDomicilio) || 0,
-                    pagos: pagosActuales,
+                    pagos: finalPagos,
                     operador: operadorActivo,
                     fecha: formData.fecha,
                     hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -275,16 +302,23 @@
                 };
 
                 try {
+                    // Guardado en Firebase
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registros', nuevoId), payload);
-                    
-                    const clientDocId = clienteSaneado.toLowerCase().replace(/\s+/g, '_');
-                    if (clientDocId) {
-                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientDocId), { 
-                            nombre: clienteSaneado,
-                            ubicacion: ubicacionSaneada 
-                        }, { merge: true });
+
+                    try {
+                        const clientDocId = clienteSaneado.toLowerCase().replace(/[^a-z0-9]/gi, '_');
+                        if (clientDocId) {
+                            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clientes', clientDocId), { 
+                                nombre: clienteSaneado,
+                                ubicacion: ubicacionSaneada 
+                            }, { merge: true });
+                        }
+                    } catch (clientErr) {
+                        console.warn("Aviso interno: Error en perfil cliente, pero el pedido se guardó.", clientErr);
                     }
-                    
+
+                    // --- 3. LIMPIEZA AUTOMÁTICA DE TODOS LOS CAMPOS ---
+                    // Una vez Firebase nos confirma que recibió los datos exitosamente, vaciamos el form
                     setFormData({ 
                         cliente: '', 
                         valorProducto: '', 
@@ -298,11 +332,11 @@
                     setProductoActual('');
                     setCantidadActual(1);
                     setRawTemplate(''); 
-                    
-                    showNotification('Registro guardado exitosamente');
+
+                    showNotification('Registro guardado exitosamente y formulario limpio');
                 } catch (err) { 
                     console.error("Error de Firebase:", err);
-                    showNotification(`Error al guardar: ${err.message}`, 'error'); 
+                    showNotification(`Error Firebase: Tu Base de Datos rechazó la escritura.`, 'error'); 
                 }
             };
 
@@ -349,11 +383,10 @@
                     <div className="max-w-7xl mx-auto px-4 pt-8">
                         <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-8">
                             <div className="flex items-center gap-6 group">
-                                
-                                {/* 1. CONTENEDOR CIRCULAR (Siempre se renderiza el círculo) */}
+
+                                {/* CONTENEDOR CIRCULAR */}
                                 <div className={`relative w-24 h-24 flex-shrink-0 rounded-full overflow-hidden border-2 p-1 transition-transform duration-500 group-hover:scale-105 ${darkMode ? 'bg-black border-[#7c3aed]/50' : 'bg-white border-slate-200'}`}>
                                     {logoCargado ? (
-                                        /* 2. SI HAY IMAGEN: La mostramos adaptada al círculo */
                                         <img 
                                             src="logo.jpg" 
                                             alt="Logo" 
@@ -361,12 +394,11 @@
                                             onError={() => setLogoCargado(false)} 
                                         />
                                     ) : (
-                                        /* 3. SI FALLA LA IMAGEN: Mostramos el matraz de respaldo */
                                         <Icon name="flask-conical" size={40} className="w-full h-full p-6 text-violet-500 opacity-20" />
                                     )}
                                 </div>
 
-                                {/* 4. TEXTO DE LA APP (Siempre visible, fuera de la condición) */}
+                                {/* TEXTO DE LA APP */}
                                 <div>
                                     <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter leading-none">
                                         <span className={theme.primary}>FERCO</span> <span className={theme.accent}>FARMA</span>
@@ -375,7 +407,7 @@
                                 </div>
 
                             </div>
-                            
+
                             <button onClick={() => setDarkMode(!darkMode)} className={`p-4 rounded-2xl border ${theme.card}`}>
                                 <Icon name={darkMode ? "sun" : "moon"} size={20} className={darkMode ? "text-amber-400" : "text-violet-600"} />
                             </button>
@@ -431,10 +463,10 @@
 
                                     <form onSubmit={agregarRegistro} className="space-y-4">
                                         <input type="date" className={`w-full px-6 py-4 rounded-2xl border font-bold ${theme.input}`} value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
-                                        
+
                                         <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Identidad del Cliente" value={formData.cliente} onChange={handleClienteChange} />
                                         <datalist id="clients">{clientesSugeridos.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
-                                        
+
                                         <div className="space-y-2">
                                             <div className="flex gap-2">
                                                 <input 
@@ -462,7 +494,7 @@
                                         </div>
 
                                         <input className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Ubicación / Sector" value={formData.ubicacion} onChange={e => setFormData({...formData, ubicacion: e.target.value})} />
-                                        
+
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold uppercase ml-2 opacity-50 italic">Valor Producto $</label>
@@ -497,8 +529,8 @@
                                                 ))}
                                             </div>
                                         </div>
-                                        
-                                        <button type="submit" disabled={diferencia !== 0 || listaProductos.length === 0} className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest disabled:opacity-20 ${theme.button}`}>Guardar Registro</button>
+
+                                        <button type="submit" className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest transition-all hover:scale-[1.02] ${theme.button}`}>Guardar Registro</button>
                                     </form>
                                 </div>
                             </section>
