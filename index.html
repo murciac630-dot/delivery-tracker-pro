@@ -4,18 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Registro FERCO_FARMA - Sistema de Gestión</title>
-
+    
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
+    
     <script src="https://cdn.tailwindcss.com"></script>
-
+    
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,700;0,900;1,900&display=swap');
-
+        
         body {
             font-family: 'Inter', sans-serif;
             margin: 0;
@@ -92,7 +92,7 @@
             const [notification, setNotification] = useState(null);
             const [showTemplateArea, setShowTemplateArea] = useState(false);
             const [rawTemplate, setRawTemplate] = useState('');
-
+            
             const [logoCargado, setLogoCargado] = useState(true);
 
             const getTodayFormatted = () => new Date().toISOString().split('T')[0];
@@ -116,7 +116,7 @@
                 const app = getSafeFirebaseApp();
                 if(!app) return;
                 const auth = getAuth(app);
-
+                
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -134,7 +134,7 @@
                     }
                 };
                 initAuth();
-
+                
                 const unsubscribe = onAuthStateChanged(auth, setUser);
                 return () => unsubscribe();
             }, []);
@@ -184,7 +184,7 @@
             const handleClienteChange = (e) => {
                 const nombreIngresado = e.target.value;
                 setFormData(prev => ({ ...prev, cliente: nombreIngresado }));
-
+                
                 const clienteEncontrado = clientesSugeridos.find(c => c.nombre.toLowerCase() === nombreIngresado.toLowerCase());
                 if (clienteEncontrado && clienteEncontrado.ubicacion) {
                     setFormData(prev => ({ ...prev, cliente: nombreIngresado, ubicacion: clienteEncontrado.ubicacion }));
@@ -196,7 +196,7 @@
                 if (!productoActual) return;
                 const cantidadValidada = parseInt(cantidadActual) > 0 ? parseInt(cantidadActual) : 1;
                 const textoProducto = `${cantidadValidada}x ${productoActual}`;
-
+                
                 setListaProductos([...listaProductos, textoProducto]);
                 setProductoActual('');
                 setCantidadActual(1);
@@ -236,7 +236,7 @@
                     valorProducto: valorP > 0 ? valorP.toString() : prev.valorProducto,
                     valorDomicilio: valorD > 0 ? valorD.toString() : prev.valorDomicilio,
                 }));
-
+                
                 if (pedidoExt) setListaProductos(pedidoExt.split(',').map(p => p.trim()));
                 setRawTemplate('');
                 setShowTemplateArea(false);
@@ -245,7 +245,7 @@
 
             const agregarRegistro = async (e) => {
                 e.preventDefault();
-
+                
                 // --- 1. MEJORA DE UX: AUTO-COMPLETADO INTELIGENTE ---
                 // Si el usuario escribió un producto o pago pero olvidó presionar el botón "+", lo agregamos por él.
                 let finalProductos = [...listaProductos];
@@ -283,7 +283,7 @@
                 const { getFirestore, doc, setDoc } = window.FB;
                 const db = getFirestore(getSafeFirebaseApp());
                 const nuevoId = Date.now().toString();
-
+                
                 const clienteSaneado = (formData.cliente || '').trim();
                 const ubicacionSaneada = (formData.ubicacion || '').trim();
 
@@ -304,7 +304,7 @@
                 try {
                     // Guardado en Firebase
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'registros', nuevoId), payload);
-
+                    
                     try {
                         const clientDocId = clienteSaneado.toLowerCase().replace(/[^a-z0-9]/gi, '_');
                         if (clientDocId) {
@@ -316,7 +316,7 @@
                     } catch (clientErr) {
                         console.warn("Aviso interno: Error en perfil cliente, pero el pedido se guardó.", clientErr);
                     }
-
+                    
                     // --- 3. LIMPIEZA AUTOMÁTICA DE TODOS LOS CAMPOS ---
                     // Una vez Firebase nos confirma que recibió los datos exitosamente, vaciamos el form
                     setFormData({ 
@@ -332,7 +332,7 @@
                     setProductoActual('');
                     setCantidadActual(1);
                     setRawTemplate(''); 
-
+                    
                     showNotification('Registro guardado exitosamente y formulario limpio');
                 } catch (err) { 
                     console.error("Error de Firebase:", err);
@@ -383,7 +383,7 @@
                     <div className="max-w-7xl mx-auto px-4 pt-8">
                         <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-8">
                             <div className="flex items-center gap-6 group">
-
+                                
                                 {/* CONTENEDOR CIRCULAR */}
                                 <div className={`relative w-24 h-24 flex-shrink-0 rounded-full overflow-hidden border-2 p-1 transition-transform duration-500 group-hover:scale-105 ${darkMode ? 'bg-black border-[#7c3aed]/50' : 'bg-white border-slate-200'}`}>
                                     {logoCargado ? (
@@ -407,7 +407,7 @@
                                 </div>
 
                             </div>
-
+                            
                             <button onClick={() => setDarkMode(!darkMode)} className={`p-4 rounded-2xl border ${theme.card}`}>
                                 <Icon name={darkMode ? "sun" : "moon"} size={20} className={darkMode ? "text-amber-400" : "text-violet-600"} />
                             </button>
@@ -463,10 +463,10 @@
 
                                     <form onSubmit={agregarRegistro} className="space-y-4">
                                         <input type="date" className={`w-full px-6 py-4 rounded-2xl border font-bold ${theme.input}`} value={formData.fecha} onChange={e => setFormData({...formData, fecha: e.target.value})} />
-
+                                        
                                         <input required list="clients" className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Identidad del Cliente" value={formData.cliente} onChange={handleClienteChange} />
                                         <datalist id="clients">{clientesSugeridos.map(c => <option key={c.nombre} value={c.nombre} />)}</datalist>
-
+                                        
                                         <div className="space-y-2">
                                             <div className="flex gap-2">
                                                 <input 
@@ -494,7 +494,7 @@
                                         </div>
 
                                         <input className={`w-full px-6 py-4 rounded-2xl border ${theme.input}`} placeholder="Ubicación / Sector" value={formData.ubicacion} onChange={e => setFormData({...formData, ubicacion: e.target.value})} />
-
+                                        
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold uppercase ml-2 opacity-50 italic">Valor Producto $</label>
@@ -529,7 +529,7 @@
                                                 ))}
                                             </div>
                                         </div>
-
+                                        
                                         <button type="submit" className={`w-full py-5 rounded-2xl font-black uppercase italic tracking-widest transition-all hover:scale-[1.02] ${theme.button}`}>Guardar Registro</button>
                                     </form>
                                 </div>
